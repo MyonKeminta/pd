@@ -100,6 +100,8 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 		children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
+	// update origin info
+	h.latest[region.GetID()] = len(h.nodes) - 1
 }
 
 func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
@@ -121,6 +123,8 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 		children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
+	// update origin info
+	h.latest[region.GetID()] = len(h.nodes) - 1
 	origin.children = append(origin.children, len(h.nodes)-1)
 }
 
@@ -143,5 +147,29 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 		children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
+	// update origin info
+	h.latest[region.GetID()] = len(h.nodes) - 1
 	origin.children = append(origin.children, len(h.nodes)-1)
+}
+
+func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
+	_, ok := h.latest[region.GetID()]
+	if ok {
+		// means it comes from split
+		// we handle it in onRegionSplit, skip here
+		return
+	} else {
+		// the first region
+		now := time.Now().UnixNano()
+		n := &node{
+			timestamp: now,
+			eventType: "Init",
+			leader:    region.GetLeader().GetStoreId(),
+			meta:      region.GetMeta(),
+			parents:   []int{},
+			children:  []int{},
+		}
+		h.nodes = append(h.nodes, n)
+		h.latest[region.GetID()] = len(h.nodes) - 1
+	}
 }

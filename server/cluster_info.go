@@ -473,6 +473,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	// Mark isNew if the region in cache does not have leader.
 	var saveKV, saveCache, isNew bool
 	if origin == nil {
+		c.regionHistory.onRegionInsert(region)
 		log.Debugf("[region %d] Insert new region {%v}", region.GetID(), core.HexRegionMeta(region.GetMeta()))
 		saveKV, saveCache, isNew = true, true, true
 	} else {
