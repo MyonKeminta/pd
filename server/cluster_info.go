@@ -39,6 +39,7 @@ type clusterInfo struct {
 	labelLevelStats *labelLevelStatistics
 	prepareChecker  *prepareChecker
 	changedRegions  chan *core.RegionInfo
+	regionHistory   *regionHistory
 }
 
 var defaultChangedRegionsLimit = 10000
@@ -52,6 +53,7 @@ func newClusterInfo(id core.IDAllocator, opt *scheduleOption, kv *core.KV) *clus
 		labelLevelStats: newLabelLevelStatistics(),
 		prepareChecker:  newPrepareChecker(),
 		changedRegions:  make(chan *core.RegionInfo, defaultChangedRegionsLimit),
+		regionHistory:   newRegionHistory(kv),
 	}
 }
 
@@ -485,6 +487,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 			saveKV, saveCache = true, true
 		}
 		if r.GetConfVer() > o.GetConfVer() {
+			c.regionHistory.onRegionConfChange(region)
 			log.Infof("[region %d] %s, ConfVer changed from {%d} to {%d}", region.GetID(), core.DiffRegionPeersInfo(origin, region), o.GetConfVer(), r.GetConfVer())
 			saveKV, saveCache = true, true
 		}
@@ -492,6 +495,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 			if origin.GetLeader().GetId() == 0 {
 				isNew = true
 			} else {
+				c.regionHistory.onRegionLeaderChange(region)
 				log.Infof("[region %d] Leader changed from store {%d} to {%d}", region.GetID(), origin.GetLeader().GetStoreId(), region.GetLeader().GetStoreId())
 			}
 			saveCache = true
@@ -535,7 +539,11 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	}
 
 	if saveCache {
+		// merge
 		overlaps := c.core.Regions.SetRegion(region)
+		if len(overlaps) != 0 {
+			c.regionHistory.onRegionMerge(region, overlaps)
+		}
 		if c.kv != nil {
 			for _, item := range overlaps {
 				if err := c.kv.DeleteRegion(item); err != nil {
@@ -573,6 +581,10 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 		c.core.HotCache.Update(key, readItem, schedule.ReadFlow)
 	}
 	return nil
+}
+
+func (c *clusterInfo) onRegionSplit(originID uint64, regions []*metapb.Region) {
+	c.regionHistory.onRegionSplit(originID, regions)
 }
 
 func (c *clusterInfo) updateRegionsLabelLevelStats(regions []*core.RegionInfo) {

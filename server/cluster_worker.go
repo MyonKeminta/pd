@@ -196,5 +196,6 @@ func (c *RaftCluster) handleBatchReportSplit(request *pdpb.ReportBatchSplitReque
 	last := len(regions) - 1
 	originRegion := proto.Clone(regions[last]).(*metapb.Region)
 	log.Infof("[region %d] region split, generate %d new regions: %v", originRegion.GetId(), last, hexRegionMetas[:last])
+	c.cachedCluster.onRegionSplit(originRegion.GetId(), regions)
 	return &pdpb.ReportBatchSplitResponse{}, nil
 }
