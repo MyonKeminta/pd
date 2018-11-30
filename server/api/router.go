@@ -128,8 +128,27 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 	logHanler := newlogHandler(svr, rd)
 	router.HandleFunc("/api/v1/admin/log", logHanler.Handle).Methods("POST")
 
+	// Serve static assets directly.
+	// router.PathPrefix("/dist").Handler(http.FileServer(http.Dir(static)))
+
+	router.PathPrefix("/tieye").HandlerFunc(IndexHandler("/Users/Connor/Coding/src/github.com/pingcap/pd/tieye/index.html"))
+
+	// historyHandler := newHistoryHandler(svr, rd)
+	// router.HandleFunc("/history", historyHandler.Index).Methods("GET")
+	// router.HandleFunc("/history/list/{start}/{end}", historyHandler.List).Methods("GET")
+	// router.HandleFunc("/history/region/{id}", historyHandler.Region).Methods("GET")
+	// router.HandleFunc("/history/key/{key}", historyHandler.Key).Methods("GET")
+
 	router.HandleFunc(pingAPI, func(w http.ResponseWriter, r *http.Request) {}).Methods("GET")
 	router.Handle("/health", newHealthHandler(svr, rd)).Methods("GET")
 	router.Handle("/diagnose", newDiagnoseHandler(svr, rd)).Methods("GET")
 	return router
+}
+
+func IndexHandler(entrypoint string) func(w http.ResponseWriter, r *http.Request) {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, entrypoint)
+	}
+
+	return http.HandlerFunc(fn)
 }
