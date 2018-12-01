@@ -13,43 +13,43 @@ import (
 )
 
 type Node struct {
-	idx       int
-	timestamp int64 // UnixNano-nano
-	leader    uint64
-	eventType string
+	Idx       int
+	Timestamp int64 // UnixNano-nano
+	Leader    uint64
+	EventType string
 
-	meta *metapb.Region
+	Meta *metapb.Region
 
 	// make sure the range of pointing regions are in ascend order
-	// int is index of nodes
-	parents []int
+	// intS is index of nodes
+	Parents []int
 	// cause it is no need to send to front end, no need to be in order
 	// int is index of nodes
-	children []int
+	Children []int
 }
 
 func (n *Node) GetTimestamp() int64 {
-	return n.timestamp
+	return n.Timestamp
 }
 
 func (n *Node) GetLeader() uint64 {
-	return n.leader
+	return n.Leader
 }
 
 func (n *Node) GetEventType() string {
-	return n.eventType
+	return n.EventType
 }
 
 func (n *Node) GetMeta() *metapb.Region {
-	return n.meta
+	return n.Meta
 }
 
 func (n *Node) GetParents() []int {
-	return n.parents
+	return n.Parents
 }
 
 func (n *Node) GetChildren() []int {
-	return n.children
+	return n.Children
 }
 
 type RegionHistory struct {
@@ -90,25 +90,25 @@ func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region)
 	for _, region := range regions {
 		idx := len(h.nodes)
 		n := &Node{
-			idx:       idx,
-			timestamp: now,
-			eventType: "Split",
-			leader:    origin.leader,
-			meta:      region,
-			parents:   []int{index},
-			children:  []int{},
+			Idx:       idx,
+			Timestamp: now,
+			EventType: "Split",
+			Leader:    origin.Leader,
+			Meta:      region,
+			Parents:   []int{index},
+			Children:  []int{},
 		}
 		h.nodes = append(h.nodes, n)
 		if err := h.kv.SaveNode(n); err != nil {
-			log.Errorf("[Split]] unable to save", n.meta.GetId())
+			log.Errorf("[Split] unable to save", n.Meta.GetId())
 		}
 
 		// update origin info
 		h.latest[region.GetId()] = idx
-		origin.children = append(origin.children, idx)
+		origin.Children = append(origin.Children, idx)
 	}
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Split]] unable to save", origin.meta.GetId())
+		log.Errorf("[Split] unable to save", origin.Meta.GetId())
 	}
 }
 
@@ -137,27 +137,27 @@ func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Reg
 		parents = append(parents, index)
 		// get the next index that following n will be
 		// make sure there is no function appedn h.nodes concurrently
-		h.nodes[index].children = append(h.nodes[index].children, len(h.nodes))
+		h.nodes[index].Children = append(h.nodes[index].Children, len(h.nodes))
 		if err := h.kv.SaveNode(h.nodes[index]); err != nil {
-			log.Errorf("[Merge] unable to save", h.nodes[index].meta.GetId())
+			log.Errorf("[Merge] unable to save", h.nodes[index].Meta.GetId())
 		}
 	}
 
 	idx := len(h.nodes)
 	n := &Node{
-		idx:       idx,
-		timestamp: now,
-		eventType: "Merge",
-		leader:    region.GetLeader().GetStoreId(),
-		meta:      region.GetMeta(),
-		parents:   parents,
-		children:  []int{},
+		Idx:       idx,
+		Timestamp: now,
+		EventType: "Merge",
+		Leader:    region.GetLeader().GetStoreId(),
+		Meta:      region.GetMeta(),
+		Parents:   parents,
+		Children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
 	// update origin info
 	h.latest[region.GetID()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Merge] unable to save", n.meta.GetId())
+		log.Errorf("[Merge] unable to save", n.Meta.GetId())
 	}
 }
 
@@ -177,23 +177,23 @@ func (h *RegionHistory) OnRegionLeaderChange(region *RegionInfo) {
 	idx := len(h.nodes)
 
 	n := &Node{
-		idx:       idx,
-		timestamp: now,
-		eventType: "LeaderChange",
-		leader:    region.GetLeader().GetStoreId(),
-		meta:      region.GetMeta(),
-		parents:   []int{index},
-		children:  []int{},
+		Idx:       idx,
+		Timestamp: now,
+		EventType: "LeaderChange",
+		Leader:    region.GetLeader().GetStoreId(),
+		Meta:      region.GetMeta(),
+		Parents:   []int{index},
+		Children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
 	// update origin info
 	h.latest[region.GetID()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Leader] unable to save", n.meta.GetId())
+		log.Errorf("[Leader] unable to save", n.Meta.GetId())
 	}
-	origin.children = append(origin.children, idx)
+	origin.Children = append(origin.Children, idx)
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Leader] unable to save", origin.meta.GetId())
+		log.Errorf("[Leader] unable to save", origin.Meta.GetId())
 	}
 }
 
@@ -212,23 +212,23 @@ func (h *RegionHistory) OnRegionConfChange(region *RegionInfo) {
 	idx := len(h.nodes)
 
 	n := &Node{
-		idx:       idx,
-		timestamp: now,
-		eventType: "ConfChange",
-		leader:    region.GetLeader().GetStoreId(),
-		meta:      region.GetMeta(),
-		parents:   []int{index},
-		children:  []int{},
+		Idx:       idx,
+		Timestamp: now,
+		EventType: "ConfChange",
+		Leader:    region.GetLeader().GetStoreId(),
+		Meta:      region.GetMeta(),
+		Parents:   []int{index},
+		Children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
 	// update origin info
 	h.latest[region.GetID()] = idx
-	origin.children = append(origin.children, idx)
+	origin.Children = append(origin.Children, idx)
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Conf] unable to save", n.meta.GetId())
+		log.Errorf("[Conf] unable to save", n.Meta.GetId())
 	}
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Conf] unable to save", origin.meta.GetId())
+		log.Errorf("[Conf] unable to save", origin.Meta.GetId())
 	}
 }
 
@@ -241,18 +241,18 @@ func (h *RegionHistory) OnRegionBootstrap(store *metapb.Store, region *metapb.Re
 	idx := len(h.nodes)
 	// the first region
 	n := &Node{
-		idx:       idx,
-		timestamp: now,
-		eventType: "Bootstrap",
-		leader:    store.GetId(),
-		meta:      region,
-		parents:   []int{},
-		children:  []int{},
+		Idx:       idx,
+		Timestamp: now,
+		EventType: "Bootstrap",
+		Leader:    store.GetId(),
+		Meta:      region,
+		Parents:   []int{},
+		Children:  []int{},
 	}
 	h.nodes = append(h.nodes, n)
 	h.latest[region.GetId()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Bootstrap] unable to save", n.meta.GetId())
+		log.Errorf("[Bootstrap] unable to save", n.Meta.GetId())
 	}
 }
 
@@ -262,7 +262,7 @@ func (h *RegionHistory) lower_bound(x int64) int {
 	ans := r
 	for l < r {
 		mid := (l + r) >> 1
-		if h.nodes[mid].timestamp >= x {
+		if h.nodes[mid].Timestamp >= x {
 			ans = mid
 			r = mid
 		} else {
@@ -285,7 +285,7 @@ func (h *RegionHistory) GetHistoryList(start, end int64) []*Node {
 	}
 	stIndex := h.lower_bound(start)
 	edIndex := h.lower_bound(end)
-	if edIndex < len(h.nodes) && h.nodes[edIndex].timestamp == end {
+	if edIndex < len(h.nodes) && h.nodes[edIndex].Timestamp == end {
 		edIndex++
 	}
 	log.Infof("[getHistoryList] %v, stIndex: %v, edIndex : %v", len(h.nodes), stIndex, edIndex)
@@ -306,14 +306,14 @@ func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 	for st < ed {
 		v := que[st]
 		st++
-		if h.nodes[v].timestamp >= start && h.nodes[v].timestamp <= end {
+		if h.nodes[v].Timestamp >= start && h.nodes[v].Timestamp <= end {
 			ans = append(ans, h.nodes[v])
 		}
-		for _, u := range h.nodes[v].parents {
+		for _, u := range h.nodes[v].Parents {
 			if _, ok := mp[u]; ok {
 				continue
 			}
-			if h.nodes[u].timestamp < start {
+			if h.nodes[u].Timestamp < start {
 				continue
 			}
 			que = append(que, u)
@@ -336,27 +336,27 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 	nodes := make([]*Node, len(ans))
 	mp := make(map[int]int)
 	for i, n := range ans {
-		mp[int(n.idx)] = i
+		mp[int(n.Idx)] = i
 	}
 	endTs := ans[len(ans) - 1].timestamp
 	for i, n := range ans {
 		nodes[i] = &Node{
-			idx:       n.idx,
-			timestamp: n.timestamp,
-			eventType: n.eventType,
-			leader:    n.leader,
-			meta:      n.meta,
-			parents:   []int{},
-			children:  []int{},
+			Idx:       n.Idx,
+			Timestamp: n.Timestamp,
+			EventType: n.EventType,
+			Leader:    n.Leader,
+			Meta:      n.Meta,
+			Parents:   []int{},
+			Children:  []int{},
 		}
-		for _, j := range n.parents {
+		for _, j := range n.Parents {
 			if k, ok := mp[j]; ok {
-				nodes[i].parents = append(nodes[i].parents, k)
+				nodes[i].Parents = append(nodes[i].Parents, k)
 			}
 		}
-		for _, j := range n.children {
+		for _, j := range n.Children {
 			if k, ok := mp[j]; ok {
-				nodes[i].children = append(nodes[i].children, k)
+				nodes[i].Children = append(nodes[i].Children, k)
 			}
 		}
 		if len(nodes[i].children) == 0 {
@@ -407,10 +407,10 @@ func (h *RegionHistory) GetKeyHistoryList(key []byte, regionID uint64, start int
 	keyStr := string(key)
 	var res []*Node
 	for _, v := range ans {
-		if v.meta.GetStartKey() == nil || string(v.meta.GetStartKey()) > keyStr {
+		if v.Meta.GetStartKey() == nil || string(v.Meta.GetStartKey()) > keyStr {
 			continue
 		}
-		if v.meta.GetEndKey() == nil || string(v.meta.GetEndKey()) < keyStr {
+		if v.Meta.GetEndKey() == nil || string(v.Meta.GetEndKey()) < keyStr {
 			continue
 		}
 		res = append(res, v)
