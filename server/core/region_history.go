@@ -1,4 +1,4 @@
-package server
+package core
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 	"math"
 
 	"github.com/pingcap/kvproto/pkg/metapb"
-	"github.com/pingcap/pd/server/core"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -53,25 +52,25 @@ func (n *Node) GetChildren() []int {
 	return n.children
 }
 
-type regionHistory struct {
+type RegionHistory struct {
 	sync.RWMutex
 
 	nodes []*Node
-	kv    *core.KV
+	kv    *KV
 
 	// region_id -> index of nodes
 	latest map[uint64]int
 }
 
-func newRegionHistory(kv *core.KV) *regionHistory {
-	return &regionHistory{
+func NewRegionHistory(kv *KV) *RegionHistory {
+	return &RegionHistory{
 		kv:     kv,
 		nodes:  make([]*Node, 0),
 		latest: make(map[uint64]int),
 	}
 }
 
-func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region) {
+func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -103,7 +102,7 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 	}
 }
 
-func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metapb.Region) {
+func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -145,7 +144,7 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 	h.latest[region.GetID()] = idx
 }
 
-func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
+func (h *RegionHistory) OnRegionLeaderChange(region *RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -175,7 +174,7 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 	origin.children = append(origin.children, idx)
 }
 
-func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
+func (h *RegionHistory) OnRegionConfChange(region *RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -204,7 +203,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	origin.children = append(origin.children, idx)
 }
 
-func (h *regionHistory) onRegionBootstrap(store *metapb.Store, region *metapb.Region) {
+func (h *RegionHistory) OnRegionBootstrap(store *metapb.Store, region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -225,7 +224,7 @@ func (h *regionHistory) onRegionBootstrap(store *metapb.Store, region *metapb.Re
 	h.latest[region.GetId()] = idx
 }
 
-func (h *regionHistory) lower_bound(x int64) int {
+func (h *RegionHistory) lower_bound(x int64) int {
 	l := 0
 	r := len(h.nodes)
 	ans := r
@@ -241,7 +240,7 @@ func (h *regionHistory) lower_bound(x int64) int {
 	return ans
 }
 
-func (h *regionHistory) getHistoryList(start, end int64) []*Node {
+func (h *RegionHistory) GetHistoryList(start, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
@@ -264,7 +263,7 @@ func (h *regionHistory) getHistoryList(start, end int64) []*Node {
 	return nil
 }
 
-func (h *regionHistory) findPrevNodes(index int, start int64, end int64) []*Node {
+func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node {
 	var que []int
 	var ans []*Node
 	que = append(que, index)
@@ -294,7 +293,7 @@ func (h *regionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 	return ans
 }
 
-func (h *regionHistory) filter(ans []*Node) []*Node {
+func (h *RegionHistory) filter(ans []*Node) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
@@ -332,7 +331,7 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 	return nodes
 }
 
-func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end int64) []*Node {
+func (h *RegionHistory) GetRegionHistoryList(regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
@@ -347,7 +346,7 @@ func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end i
 	return nil
 }
 
-func (h *regionHistory) getKeyHistoryList(key []byte, regionID uint64, start int64, end int64) []*Node {
+func (h *RegionHistory) GetKeyHistoryList(key []byte, regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 

@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/pd/server"
+	"github.com/pingcap/pd/server/core"
 	"github.com/unrolled/render"
 )
 
@@ -45,7 +46,7 @@ type RegionMeta struct {
 // 	storeID 	uint64 `json:"store_id"`
 // }
 
-func newNodeInfo(node *server.Node) *NodeInfo {
+func newNodeInfo(node *core.Node) *NodeInfo {
 	return &NodeInfo{
 		Timestamp: node.GetTimestamp(),
 		Leader:    node.GetLeader(),
@@ -66,7 +67,7 @@ func newRegionMeta(meta *metapb.Region) *RegionMeta {
 	}
 }
 
-func convertToAPINodeInfos(nodes []*server.Node) []*NodeInfo {
+func convertToAPINodeInfos(nodes []*core.Node) []*NodeInfo {
 	list := make([]*NodeInfo, 0, len(nodes))
 	for _, node := range nodes {
 		list = append(list, newNodeInfo(node))

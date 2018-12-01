@@ -39,7 +39,7 @@ type clusterInfo struct {
 	labelLevelStats *labelLevelStatistics
 	prepareChecker  *prepareChecker
 	changedRegions  chan *core.RegionInfo
-	regionHistory   *regionHistory
+	regionHistory   *core.RegionHistory
 }
 
 var defaultChangedRegionsLimit = 10000
@@ -53,7 +53,7 @@ func newClusterInfo(id core.IDAllocator, opt *scheduleOption, kv *core.KV) *clus
 		labelLevelStats: newLabelLevelStatistics(),
 		prepareChecker:  newPrepareChecker(),
 		changedRegions:  make(chan *core.RegionInfo, defaultChangedRegionsLimit),
-		regionHistory:   newRegionHistory(kv),
+		regionHistory:   core.NewRegionHistory(kv),
 	}
 }
 
@@ -461,7 +461,7 @@ func (c *clusterInfo) updateStoreStatusLocked(id uint64) {
 }
 
 func (c *clusterInfo) onBootstrap(store *metapb.Store, region *metapb.Region) {
-	c.regionHistory.onRegionBootstrap(store, region)
+	c.regionHistory.OnRegionBootstrap(store, region)
 }
 
 // handleRegionHeartbeat updates the region information.
@@ -491,7 +491,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 			saveKV, saveCache = true, true
 		}
 		if r.GetConfVer() > o.GetConfVer() {
-			c.regionHistory.onRegionConfChange(region)
+			c.regionHistory.OnRegionConfChange(region)
 			log.Infof("[region %d] %s, ConfVer changed from {%d} to {%d}", region.GetID(), core.DiffRegionPeersInfo(origin, region), o.GetConfVer(), r.GetConfVer())
 			saveKV, saveCache = true, true
 		}
@@ -499,7 +499,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 			if origin.GetLeader().GetId() == 0 {
 				isNew = true
 			} else {
-				c.regionHistory.onRegionLeaderChange(region)
+				c.regionHistory.OnRegionLeaderChange(region)
 				log.Infof("[region %d] Leader changed from store {%d} to {%d}", region.GetID(), origin.GetLeader().GetStoreId(), region.GetLeader().GetStoreId())
 			}
 			saveCache = true
@@ -546,7 +546,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 		// merge
 		overlaps := c.core.Regions.SetRegion(region)
 		if len(overlaps) != 0 {
-			c.regionHistory.onRegionMerge(region, overlaps)
+			c.regionHistory.OnRegionMerge(region, overlaps)
 		}
 		if c.kv != nil {
 			for _, item := range overlaps {
@@ -588,7 +588,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 }
 
 func (c *clusterInfo) onRegionSplit(originID uint64, regions []*metapb.Region) {
-	c.regionHistory.onRegionSplit(originID, regions)
+	c.regionHistory.OnRegionSplit(originID, regions)
 }
 
 func (c *clusterInfo) updateRegionsLabelLevelStats(regions []*core.RegionInfo) {

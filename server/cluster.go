@@ -216,20 +216,20 @@ func checkBootstrapRequest(clusterID uint64, req *pdpb.BootstrapRequest) error {
 	return nil
 }
 
-func (c *RaftCluster) GetHistoryList(start, end int64) []*Node {
-	return c.cachedCluster.regionHistory.getHistoryList(start, end)
+func (c *RaftCluster) GetHistoryList(start, end int64) []*core.Node {
+	return c.cachedCluster.regionHistory.GetHistoryList(start, end)
 }
 
-func (c *RaftCluster) GetRegionHistoryList(start, end int64, regionID uint64) []*Node {
-	return c.cachedCluster.regionHistory.getRegionHistoryList(regionID, start, end)
+func (c *RaftCluster) GetRegionHistoryList(start, end int64, regionID uint64) []*core.Node {
+	return c.cachedCluster.regionHistory.GetRegionHistoryList(regionID, start, end)
 }
 
-func (c *RaftCluster) GetKeyHistoryList(start, end int64, key []byte) []*Node {
+func (c *RaftCluster) GetKeyHistoryList(start, end int64, key []byte) []*core.Node {
 	r := c.GetRegionInfoByKey(key)
 	if r == nil {
-		return make([]*Node, 0)
+		return make([]*core.Node, 0)
 	}
-	return c.cachedCluster.regionHistory.getKeyHistoryList(key, r.GetID(), start, end)
+	return c.cachedCluster.regionHistory.GetKeyHistoryList(key, r.GetID(), start, end)
 }
 
 // GetRegionByKey gets region and leader peer by region key from cluster.

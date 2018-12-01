@@ -1,10 +1,10 @@
-
-package server
+package core
 
 import (
+	"time"
+
 	. "github.com/pingcap/check"
 	"github.com/pingcap/kvproto/pkg/metapb"
-	"time"
 )
 
 var _ = Suite(&testUtilSuite{})
@@ -22,21 +22,21 @@ func GetRegionId(nodes []*Node) []int {
 func (s *testRegionHistory) TestSplit(c *C) {
 	history := newRegionHistory(nil)
 	history.onRegionBootstrap(&metapb.Region{
-	Id: 0,
-	// Region key range [start_key, end_key).
-	StartKey: []byte(""),
-	EndKey:   []byte("zzz"),
+		Id: 0,
+		// Region key range [start_key, end_key).
+		StartKey: []byte(""),
+		EndKey:   []byte("zzz"),
 	})
 	time.Sleep(20 * time.Millisecond)
 	history.onRegionSplit(0, []*metapb.Region{
-		{Id:0, StartKey:[]byte(""), EndKey:[]byte("abc")},
-		{Id:1, StartKey:[]byte("abc"), EndKey:[]byte("zzz")},
+		{Id: 0, StartKey: []byte(""), EndKey: []byte("abc")},
+		{Id: 1, StartKey: []byte("abc"), EndKey: []byte("zzz")},
 	})
 	//ed := time.Now().UnixNano()
 	time.Sleep(20 * time.Millisecond)
 	history.onRegionSplit(1, []*metapb.Region{
-		{Id:1, StartKey:[]byte("abc"), EndKey:[]byte("bbb")},
-		{Id:2, StartKey:[]byte("bbb"), EndKey:[]byte("zzz")},
+		{Id: 1, StartKey: []byte("abc"), EndKey: []byte("bbb")},
+		{Id: 2, StartKey: []byte("bbb"), EndKey: []byte("zzz")},
 	})
 
 	//c.Assert(nt.Equal(t), IsTrue)
@@ -44,4 +44,3 @@ func (s *testRegionHistory) TestSplit(c *C) {
 	//c.Assert(err, NotNil)
 	//c.Assert(nt.Equal(zeroTime), IsTrue)
 }
-
