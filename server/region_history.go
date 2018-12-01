@@ -9,6 +9,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/pd/server/core"
 	log "github.com/sirupsen/logrus"
+	"math"
 )
 
 type Node struct {
@@ -78,9 +79,10 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 		log.Errorf("[Split] not found latest info of region %v", originID)
 		return
 	}
+	now := time.Now().Unix()
+	log.Infof("[RegionSplit] region %v, ts: %v", originID, now)
 	origin := h.nodes[index]
 
-	now := time.Now().UnixNano()
 	for _, region := range regions {
 		idx := len(h.nodes)
 		n := &Node{
@@ -104,7 +106,8 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().UnixNano()
+	now := time.Now().Unix()
+	log.Infof("[RegionMerge] region %v, ts: %v", region.GetID(), now)
 	var parents []int
 
 	// regard origin region as overlap too
@@ -145,13 +148,14 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().UnixNano()
+	now := time.Now().Unix()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Leader] not found latest info of region %v", region.GetID())
 		return
 	}
 
+	log.Infof("[ConfChange] region %v, ts: %v", region.GetID(), now)
 	origin := h.nodes[index]
 	idx := len(h.nodes)
 
@@ -174,12 +178,13 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().UnixNano()
+	now := time.Now().Unix()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Conf] not found latest info of region %v", region.GetID())
 		return
 	}
+	log.Infof("[ConfChange] region %v, ts: %v", region.GetID(), now)
 	origin := h.nodes[index]
 	idx := len(h.nodes)
 
@@ -201,11 +206,10 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
-
-	log.Infof("[Boorstrap] region %v", region.GetId())
+	now := time.Now().Unix()
+	log.Infof("[Boorstrap] region %v, ts: %v", region.GetId(), now)
 	idx := len(h.nodes)
 	// the first region
-	now := time.Now().UnixNano()
 	n := &Node{
 		idx:       idx,
 		timestamp: now,
@@ -238,8 +242,11 @@ func (h *regionHistory) lower_bound(x int64) int {
 func (h *regionHistory) getHistoryList(start, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
-
+	if end == 0 {
+		end = math.MaxInt64
+	}
 	if end < start {
+		log.Errorf("[getHistoryList ERROR] start: %v, end : %v", start, end)
 		return nil
 	}
 	stIndex := h.lower_bound(start)
@@ -247,8 +254,9 @@ func (h *regionHistory) getHistoryList(start, end int64) []*Node {
 	if edIndex < len(h.nodes) && h.nodes[edIndex].timestamp == end {
 		edIndex++
 	}
+	log.Infof("[getHistoryList] stIndex: %v, edIndex : %v", stIndex, edIndex)
 	if edIndex > stIndex {
-		return h.nodes[stIndex:edIndex]
+		return h.filter(h.nodes[stIndex:edIndex])
 	}
 	return nil
 }
@@ -279,6 +287,7 @@ func (h *regionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 			ed++
 		}
 	}
+	log.Infof("[find prev node] index: %d, count : %v", index, ed)
 	return ans
 }
 
@@ -286,6 +295,7 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
+	log.Infof("[filter Region Begin] count : %v", len(ans))
 	if len(ans) == 0 {
 		return nil
 	}
@@ -318,19 +328,20 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 			}
 		}
 	}
+	log.Infof("[filter Region After] count : %v", len(nodes))
 	return nodes
 }
 
 func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
-
+	if end == 0 {
+		end = math.MaxInt64
+	}
 	index, ok := h.latest[regionID]
 	if ok {
 		return h.filter(h.findPrevNodes(index, start, end))
 	}
-	h.RLock()
-	defer h.RUnlock()
 
 	return nil
 }
@@ -338,7 +349,9 @@ func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end i
 func (h *regionHistory) getKeyHistoryList(key []byte, regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
-
+	if end == 0 {
+		end = math.MaxInt64
+	}
 	index, ok := h.latest[regionID]
 	if !ok {
 		return nil
@@ -347,9 +360,13 @@ func (h *regionHistory) getKeyHistoryList(key []byte, regionID uint64, start int
 	keyStr := string(key)
 	var res []*Node
 	for _, v := range ans {
-		if v.meta.GetStartKey() != nil && string(v.meta.GetStartKey()) < keyStr {
-			res = append(res, v)
+		if v.meta.GetStartKey() == nil || string(v.meta.GetStartKey()) > keyStr {
+			continue
 		}
+		if v.meta.GetEndKey() == nil || string(v.meta.GetEndKey()) < keyStr {
+			continue
+		}
+		res = append(res, v)
 	}
 	return h.filter(res)
 }
