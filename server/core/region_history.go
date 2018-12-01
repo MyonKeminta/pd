@@ -338,7 +338,7 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 	for i, n := range ans {
 		mp[int(n.Idx)] = i
 	}
-	endTs := ans[len(ans) - 1].timestamp
+	endTs := ans[len(ans) - 1].Timestamp
 	for i, n := range ans {
 		nodes[i] = &Node{
 			Idx:       n.Idx,
@@ -359,18 +359,18 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 				nodes[i].Children = append(nodes[i].Children, k)
 			}
 		}
-		if len(nodes[i].children) == 0 {
+		if len(nodes[i].Children) == 0 {
 			idx := len(nodes)
 			nodes = append(nodes, &Node{
-				idx: idx,
-				timestamp: endTs,
-				leader: nodes[i].leader,
-				eventType: "Final",
-				meta: nodes[i].meta,
-				parents: []int{i},
-				children: []int{},
+				Idx: idx,
+				Timestamp: endTs,
+				Leader: nodes[i].Leader,
+				EventType: "Final",
+				Meta: nodes[i].Meta,
+				Parents: []int{i},
+				Children: []int{},
 			})
-			nodes[i].children = append(nodes[i].children, idx)
+			nodes[i].Children = append(nodes[i].Children, idx)
 		}
 	}
 	log.Infof("[filter Region After] count : %v", len(nodes))
