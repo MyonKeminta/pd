@@ -17,6 +17,13 @@
                         <b-icon icon="all-inclusive"></b-icon> <span>All Regions</span>
                     </a>
                 </div>
+                 <div class="navbar-item">
+                     <b-input name="navbar-input-key" width="10" v-model="key"></b-input>
+                    <a class="navbar-item" @click.prevent="onKeyClicked">
+                        <b-icon icon="all-inclusive"></b-icon> <span>Query Key</span>
+                    </a>
+                </div>
+
                 <div class="navbar-end">
                     <b-dropdown position="is-bottom-left">
                         <a class="navbar-item" slot="trigger">
@@ -32,14 +39,17 @@
 
 <script lang="ts">
     import { Component, Vue } from 'vue-property-decorator';
-
     @Component
     export default class Navbar extends Vue {
         useStartTime: boolean = false;
         startDate: Date | null = new Date();
+        key: string = "";
 
         onAllClicked() {
             this.$emit("on-all-clicked");
+        }
+        onKeyClicked() {
+            this.$emit("on-key-clicked", this.key);
         }
     }
 </script>

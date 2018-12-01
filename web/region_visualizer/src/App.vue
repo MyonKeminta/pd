@@ -1,6 +1,6 @@
 <template>
     <div id="app">
-        <Navbar @on-all-clicked="onAllClicked" />
+        <Navbar @on-all-clicked="onAllClicked" @on-key-clicked="onKeyClicked"/>
         <div class="container">
             <!--<h1 class="title is-1">Region History Visualizer</h1>-->
             <RegionVisualizer :data="data" />
@@ -42,9 +42,14 @@
 
         // Navbar click logic
         onAllClicked() {
-            DataSource.getALlData(this.receiveNewData, this.handleRequestDataError, () => { });
+            DataSource.getAllData({},this.receiveNewData, this.handleRequestDataError, () => { });
         }
-        
+
+        onKeyClicked(key: string) {
+            //var j =
+            DataSource.getDataByKey({"key":key},this.receiveNewData, this.handleRequestDataError, () => { });
+        }
+
     }
 </script>
 

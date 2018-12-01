@@ -4,8 +4,8 @@ import { setTimeout } from 'timers';
 
 const USE_MOCK_DATA = false;
 function pdPrefix(path: string): string {
-    //return "http://localhost:2333/";
-    return "/pd/api/v1/history/" + path;
+    return "http://192.168.197.105:2379/pd/api/v1/history/" + path;
+    //return "/pd/api/v1/history/" + path;
 }
 
 const MOCK_DATA = [
@@ -223,6 +223,8 @@ const MOCK_DATA = [
     ]
 ]
 
+type StringDict = { [key: string]: string };
+
 function getMockData(onSuccess: (_: RawNode[]) => void, _onError: (_: any) => void, onFinish: () => void) {
     setTimeout(() => {
         onSuccess(MOCK_DATA[Math.floor(Math.random() * 1)]);
@@ -230,19 +232,37 @@ function getMockData(onSuccess: (_: RawNode[]) => void, _onError: (_: any) => vo
     }, 1500);
 }
 
-function getDataFromPdApi(onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
-    Axios.get<RawNode[]>(pdPrefix("list"))
+function getDataFromPdApi(path: string, params : StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+    Axios.get<RawNode[]>(pdPrefix(path), {
+        params  : params
+    })
         .then(res => onSuccess(res.data))
         .catch(onError)
         .then(onFinish);
 }
 
 namespace DataSource {
-    export function getALlData(onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+    export function getAllData(params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
         if (USE_MOCK_DATA) {
             getMockData(onSuccess, onError, onFinish);
         } else {
-            getDataFromPdApi(onSuccess, onError, onFinish);
+            getDataFromPdApi("list", params, onSuccess, onError, onFinish);
+        }
+    }
+
+    export function getDataByRegion(params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+        if (USE_MOCK_DATA) {
+            getMockData(onSuccess, onError, onFinish);
+        } else {
+            getDataFromPdApi("region/" + params["regionId"], params, onSuccess, onError, onFinish);
+        }
+    }
+
+    export function getDataByKey(params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+        if (USE_MOCK_DATA) {
+            getMockData(onSuccess, onError, onFinish);
+        } else {
+            getDataFromPdApi("key/" + params["key"], params, onSuccess, onError, onFinish);
         }
     }
 }
