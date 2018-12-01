@@ -1,6 +1,6 @@
 <template>
     <div id="app">
-        <Navbar @on-all-clicked="onAllClicked" @on-time-range-set="onTimeRangeSet"/>
+        <Navbar @on-all-clicked="onAllClicked" @on-key-clicked="onKeyClicked" @on-time-range-set="onTimeRangeSet" />
         <div class="container">
             <!--<h1 class="title is-1">Region History Visualizer</h1>-->
             <RegionVisualizer :data="data" />
@@ -67,9 +67,13 @@
         onAllClicked() {
             this.prevRequest = "all";
             this.prepareRequestNewData();
-            DataSource.getALlData(this.receiveNewData, this.handleRequestDataError, this.finishRequestData);
+            DataSource.getAllData({},this.receiveNewData, this.handleRequestDataError, () => { });
         }
 
+        onKeyClicked(key: string) {
+            //var j =
+            DataSource.getDataByKey({"key":key},this.receiveNewData, this.handleRequestDataError, () => { });
+        }
 
         onTimeRangeSet(startTime: Date | null, endTime: Date | null) {
             this.startTime = startTime;
