@@ -41,11 +41,6 @@ type RegionMeta struct {
 	Peers       []*metapb.Peer      `json:"peers"`
 }
 
-// type EpochInfo struct {
-// 	id  	uint64 `json:"id"`
-// 	storeID 	uint64 `json:"store_id"`
-// }
-
 func newNodeInfo(node *core.Node) *NodeInfo {
 	return &NodeInfo{
 		Timestamp: node.GetTimestamp(),
