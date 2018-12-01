@@ -125,7 +125,7 @@ func (h *historyHandler) Region(w http.ResponseWriter, r *http.Request) {
 		h.r.JSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	regionID, err := strconv.ParseUint(mux.Vars(r)["region_id"], 10, 64)
+	regionID, err := strconv.ParseUint(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		h.r.JSON(w, http.StatusBadRequest, err.Error())
 		return
