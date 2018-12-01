@@ -305,7 +305,7 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 	nodes := make([]*Node, len(ans))
 	mp := make(map[int]int)
 	for i, n := range ans {
-		mp[int(n.meta.GetId())] = i
+		mp[int(n.idx)] = i
 	}
 	for i, n := range ans {
 		nodes[i] = &Node{
@@ -317,9 +317,6 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 			parents:   []int{},
 			children:  []int{},
 		}
-		*nodes[i] = *n
-		nodes[i].parents = make([]int, 0)
-		nodes[i].children = make([]int, 0)
 		for _, j := range n.parents {
 			if k, ok := mp[j]; ok {
 				nodes[i].parents = append(nodes[i].parents, k)
