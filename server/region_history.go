@@ -204,7 +204,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	origin.children = append(origin.children, idx)
 }
 
-func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
+func (h *regionHistory) onRegionBootstrap(store *metapb.Store, region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
@@ -216,7 +216,7 @@ func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 		idx:       idx,
 		timestamp: now,
 		eventType: "Bootstrap",
-		leader:    0,
+		leader:    store.GetId(),
 		meta:      region,
 		parents:   []int{},
 		children:  []int{},

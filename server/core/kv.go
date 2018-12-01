@@ -139,7 +139,7 @@ func (kv *KV) SaveRegion(region *metapb.Region) error {
 	return saveProto(kv.KVBase, regionPath(region.GetId()), region)
 }
 
-func (kv *KV) SaveNode(node interface{}) error {
+func (kv *KV) SaveNode(key string, node interface{}) error {
 	value, err := json.Marshal(node)
 	if err != nil {
 		return errors.WithStack(err)
