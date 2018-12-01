@@ -254,7 +254,7 @@ func (h *regionHistory) getHistoryList(start, end int64) []*Node {
 	if edIndex < len(h.nodes) && h.nodes[edIndex].timestamp == end {
 		edIndex++
 	}
-	log.Infof("[getHistoryList] stIndex: %v, edIndex : %v", stIndex, edIndex)
+	log.Infof("[getHistoryList] %v, stIndex: %v, edIndex : %v", len(h.nodes), stIndex, edIndex)
 	if edIndex > stIndex {
 		return h.filter(h.nodes[stIndex:edIndex])
 	}
