@@ -221,11 +221,13 @@ func (c *RaftCluster) GetHistoryList(start, end int64) []*Node {
 }
 
 func (c *RaftCluster) GetRegionHistoryList(regionID uint64) []*Node {
-	return c.cachedCluster.regionHistory.getRegionHistoryList(regionID)
+	return nil
+	//return c.cachedCluster.regionHistory.getRegionHistoryList(regionID)
 }
 
 func (c *RaftCluster) GetKeyHistoryList(key []byte) []*Node {
-	return c.cachedCluster.regionHistory.getKeyHistoryList(key)
+	return nil
+	//return c.cachedCluster.regionHistory.getKeyHistoryList(key)
 }
 
 // GetRegionByKey gets region and leader peer by region key from cluster.
