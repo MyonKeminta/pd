@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -103,7 +104,7 @@ func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region)
 		}
 		h.nodes = append(h.nodes, n)
 		if err := h.kv.SaveNode(n); err != nil {
-			log.Errorf("[Split] unable to save", n.Meta.GetId())
+			panic(fmt.Sprintf("[Split] unable to save", n.Meta.GetId()))
 		}
 
 		// update origin info
@@ -112,13 +113,27 @@ func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region)
 	}
 
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Split] unable to save", origin.Meta.GetId())
+		panic(fmt.Sprintf("[Split] unable to save", origin.Meta.GetId()))
 	}
 }
 
 func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
+
+	// some bug for tikv or pd, just skip it
+	if region.GetID() == 2 && len(region.GetStartKey()) == 0 && len(region.GetEndKey()) == 0 {
+		log.Infof("[Merge] skip region 2 bug")
+		return
+	}
+	for _, overlap := range overlaps {
+		if overlap.GetId() == 2 && len(overlap.GetStartKey()) == 0 && len(overlap.GetEndKey()) == 0 {
+			if index, found := h.latest[2]; found && h.nodes[index].Meta.GetRegionEpoch().GetVersion() > overlap.GetRegionEpoch().GetVersion() {
+				log.Infof("[Merge] skip region 2 bug")
+				return
+			}
+		}
+	}
 
 	now := time.Now().UnixNano()
 	log.Infof("[Merge] region %v, ts: %v", region.GetID(), now)
@@ -143,7 +158,7 @@ func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Reg
 		// make sure there is no function append h.nodes concurrently
 		h.nodes[index].Children = append(h.nodes[index].Children, len(h.nodes))
 		if err := h.kv.SaveNode(h.nodes[index]); err != nil {
-			log.Errorf("[Merge] unable to save", h.nodes[index].Meta.GetId())
+			panic(fmt.Sprintf("[Merge] unable to save", h.nodes[index].Meta.GetId()))
 		}
 	}
 
@@ -161,7 +176,7 @@ func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Reg
 	// update origin info
 	h.latest[region.GetID()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Merge] unable to save", n.Meta.GetId())
+		panic(fmt.Sprintf("[Merge] unable to save", n.Meta.GetId()))
 	}
 }
 
@@ -193,11 +208,11 @@ func (h *RegionHistory) OnRegionLeaderChange(region *RegionInfo) {
 	// update origin info
 	h.latest[region.GetID()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Leader] unable to save", n.Meta.GetId())
+		panic(fmt.Sprintf("[Leader] unable to save", n.Meta.GetId()))
 	}
 	origin.Children = append(origin.Children, idx)
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Leader] unable to save", origin.Meta.GetId())
+		panic(fmt.Sprintf("[Leader] unable to save", origin.Meta.GetId()))
 	}
 }
 
@@ -229,10 +244,10 @@ func (h *RegionHistory) OnRegionConfChange(region *RegionInfo) {
 	h.latest[region.GetID()] = idx
 	origin.Children = append(origin.Children, idx)
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Conf] unable to save", n.Meta.GetId())
+		panic(fmt.Sprintf("[Conf] unable to save", n.Meta.GetId()))
 	}
 	if err := h.kv.SaveNode(origin); err != nil {
-		log.Errorf("[Conf] unable to save", origin.Meta.GetId())
+		panic(fmt.Sprintf("[Conf] unable to save", origin.Meta.GetId()))
 	}
 }
 
@@ -256,7 +271,7 @@ func (h *RegionHistory) OnRegionBootstrap(store *metapb.Store, region *metapb.Re
 	h.nodes = append(h.nodes, n)
 	h.latest[region.GetId()] = idx
 	if err := h.kv.SaveNode(n); err != nil {
-		log.Errorf("[Bootstrap] unable to save", n.Meta.GetId())
+		panic(fmt.Sprintf("[Bootstrap] unable to save", n.Meta.GetId()))
 	}
 }
 
