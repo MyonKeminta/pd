@@ -216,6 +216,18 @@ func checkBootstrapRequest(clusterID uint64, req *pdpb.BootstrapRequest) error {
 	return nil
 }
 
+func (c *RaftCluster) GetHistoryList(start, end int64) []*Node {
+	return c.cachedCluster.regionHistory.getHistoryList(start, end)
+}
+
+func (c *RaftCluster) GetRegionHistoryList(regionID uint64) []*Node {
+	return c.cachedCluster.regionHistory.getRegionHistoryList(regionID)
+}
+
+func (c *RaftCluster) GetKeyHistoryList(key []byte) []*Node {
+	return c.cachedCluster.regionHistory.getKeyHistoryList(key)
+}
+
 // GetRegionByKey gets region and leader peer by region key from cluster.
 func (c *RaftCluster) GetRegionByKey(regionKey []byte) (*metapb.Region, *metapb.Peer) {
 	c.RLock()

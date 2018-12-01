@@ -10,7 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type node struct {
+type Node struct {
 	timestamp int64 // unix-nano
 	leader    uint64
 	eventType string
@@ -26,7 +26,7 @@ type node struct {
 }
 
 type regionHistory struct {
-	nodes []*node
+	nodes []*Node
 	kv    *core.KV
 
 	// region_id -> index of nodes
@@ -36,7 +36,7 @@ type regionHistory struct {
 func newRegionHistory(kv *core.KV) *regionHistory {
 	return &regionHistory{
 		kv:     kv,
-		nodes:  make([]*node, 0),
+		nodes:  make([]*Node, 0),
 		latest: make(map[uint64]int),
 	}
 }
@@ -51,7 +51,7 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 
 	now := time.Now().UnixNano()
 	for _, region := range regions {
-		n := &node{
+		n := &Node{
 			timestamp: now,
 			eventType: "Split",
 			leader:    origin.leader,
@@ -91,7 +91,7 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 		h.nodes[index].children = append(h.nodes[index].children, len(h.nodes))
 	}
 
-	n := &node{
+	n := &Node{
 		timestamp: now,
 		eventType: "Merge",
 		leader:    region.GetLeader().GetStoreId(),
@@ -114,7 +114,7 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 	}
 	origin := h.nodes[index]
 
-	n := &node{
+	n := &Node{
 		timestamp: now,
 		eventType: "LeaderChange",
 		leader:    region.GetLeader().GetStoreId(),
@@ -138,7 +138,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	}
 	origin := h.nodes[index]
 
-	n := &node{
+	n := &Node{
 		timestamp: now,
 		eventType: "ConfChange",
 		leader:    region.GetLeader().GetStoreId(),
@@ -161,7 +161,7 @@ func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
 	} else {
 		// the first region
 		now := time.Now().UnixNano()
-		n := &node{
+		n := &Node{
 			timestamp: now,
 			eventType: "Init",
 			leader:    region.GetLeader().GetStoreId(),
@@ -172,4 +172,16 @@ func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
 		h.nodes = append(h.nodes, n)
 		h.latest[region.GetID()] = len(h.nodes) - 1
 	}
+}
+
+func (h *regionHistory) getHistoryList(start, end int64) []*Node {
+	return nil
+}
+
+func (h *regionHistory) getRegionHistoryList(regionID uint64) []*Node {
+	return nil
+}
+
+func (h *regionHistory) getKeyHistoryList(key []byte) []*Node {
+	return nil
 }
