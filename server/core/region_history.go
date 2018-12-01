@@ -22,9 +22,7 @@ type Node struct {
 
 	// make sure the range of pointing regions are in ascend order
 	// intS is index of nodes
-	Parents []int
-	// cause it is no need to send to front end, no need to be in order
-	// int is index of nodes
+	Parents  []int
 	Children []int
 }
 
@@ -87,6 +85,11 @@ func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region)
 	log.Infof("[Split] region %v, ts: %v", originID, now)
 	origin := h.nodes[index]
 
+	// make sure in order
+	sort.Slice(regions, func(i, j int) bool {
+		return bytes.Compare(regions[i].GetStartKey(), regions[j].GetStartKey()) < 0
+	})
+
 	for _, region := range regions {
 		idx := len(h.nodes)
 		n := &Node{
@@ -107,6 +110,7 @@ func (h *RegionHistory) OnRegionSplit(originID uint64, regions []*metapb.Region)
 		h.latest[region.GetId()] = idx
 		origin.Children = append(origin.Children, idx)
 	}
+
 	if err := h.kv.SaveNode(origin); err != nil {
 		log.Errorf("[Split] unable to save", origin.Meta.GetId())
 	}
@@ -117,7 +121,7 @@ func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Reg
 	defer h.Unlock()
 
 	now := time.Now().UnixNano()
-	log.Infof("[RegionMerge] region %v, ts: %v", region.GetID(), now)
+	log.Infof("[Merge] region %v, ts: %v", region.GetID(), now)
 	var parents []int
 
 	// regard origin region as overlap too
@@ -136,7 +140,7 @@ func (h *RegionHistory) OnRegionMerge(region *RegionInfo, overlaps []*metapb.Reg
 		}
 		parents = append(parents, index)
 		// get the next index that following n will be
-		// make sure there is no function appedn h.nodes concurrently
+		// make sure there is no function append h.nodes concurrently
 		h.nodes[index].Children = append(h.nodes[index].Children, len(h.nodes))
 		if err := h.kv.SaveNode(h.nodes[index]); err != nil {
 			log.Errorf("[Merge] unable to save", h.nodes[index].Meta.GetId())
@@ -338,7 +342,7 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 	for i, n := range ans {
 		mp[int(n.Idx)] = i
 	}
-	endTs := ans[len(ans) - 1].Timestamp
+	endTs := ans[len(ans)-1].Timestamp
 	for i, n := range ans {
 		nodes[i] = &Node{
 			Idx:       n.Idx,
@@ -362,13 +366,13 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 		if len(nodes[i].Children) == 0 && nodes[i].Timestamp != endTs {
 			idx := len(nodes)
 			nodes = append(nodes, &Node{
-				Idx: idx,
+				Idx:       idx,
 				Timestamp: endTs,
-				Leader: nodes[i].Leader,
+				Leader:    nodes[i].Leader,
 				EventType: "Final",
-				Meta: nodes[i].Meta,
-				Parents: []int{i},
-				Children: []int{},
+				Meta:      nodes[i].Meta,
+				Parents:   []int{i},
+				Children:  []int{},
 			})
 			nodes[i].Children = append(nodes[i].Children, idx)
 		}

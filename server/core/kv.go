@@ -140,7 +140,7 @@ func (kv *KV) SaveRegion(region *metapb.Region) error {
 }
 
 func (kv *KV) SaveNode(node *Node) error {
-	key := strconv.FormatInt(node.Timestamp, 10) + strconv.FormatUint(node.Meta.GetId(), 10)
+	key := strconv.FormatInt(node.Timestamp, 10) + strconv.FormatInt(int64(node.Idx), 10) + strconv.FormatUint(node.Meta.GetId(), 10)
 	value, err := json.Marshal(node)
 	if err != nil {
 		return errors.WithStack(err)
@@ -173,6 +173,9 @@ func (kv *KV) LoadNodes(rh *RegionHistory) error {
 			}
 
 			rh.nodes = append(rh.nodes, node)
+			if node.Idx != len(rh.nodes)-1 {
+				panic("idx not match")
+			}
 			rh.latest[node.Meta.GetId()] = len(rh.nodes) - 1
 		}
 
@@ -181,7 +184,7 @@ func (kv *KV) LoadNodes(rh *RegionHistory) error {
 		}
 
 		last := rh.nodes[len(rh.nodes)]
-		startKey = path.Join(nodePath, strconv.FormatInt(last.Timestamp+1, 10))
+		startKey = path.Join(nodePath, strconv.FormatInt(last.Timestamp, 10)+strconv.FormatInt(int64(last.Idx+1), 10))
 	}
 
 	return nil
