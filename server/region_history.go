@@ -202,10 +202,10 @@ func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
-	log.Infof("[Bootstrap] region %v", region.GetId())
+	now := time.Now().UnixNano()
+	log.Infof("[Bootstrap] region %v on %v", region.GetId(), now)
 	idx := len(h.nodes)
 	// the first region
-	now := time.Now().UnixNano()
 	n := &Node{
 		idx:       idx,
 		timestamp: now,
