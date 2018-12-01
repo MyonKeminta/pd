@@ -418,6 +418,7 @@ func (s *Server) bootstrapCluster(req *pdpb.BootstrapRequest) (*pdpb.BootstrapRe
 	if err := s.cluster.start(); err != nil {
 		return nil, err
 	}
+	s.cluster.cachedCluster.onBootstrap(req.GetRegion())
 
 	return &pdpb.BootstrapResponse{}, nil
 }

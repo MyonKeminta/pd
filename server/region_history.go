@@ -198,31 +198,25 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	origin.children = append(origin.children, idx)
 }
 
-func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
+func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
 
-	_, ok := h.latest[region.GetID()]
-	if ok {
-		// means it comes from split
-		// we handle it in onRegionSplit, skip here
-		return
-	} else {
-		idx := len(h.nodes)
-		// the first region
-		now := time.Now().UnixNano()
-		n := &Node{
-			idx:       idx,
-			timestamp: now,
-			eventType: "Init",
-			leader:    region.GetLeader().GetStoreId(),
-			meta:      region.GetMeta(),
-			parents:   []int{},
-			children:  []int{},
-		}
-		h.nodes = append(h.nodes, n)
-		h.latest[region.GetID()] = idx
+	log.Infof("[Boorstrap] region %v", region.GetId())
+	idx := len(h.nodes)
+	// the first region
+	now := time.Now().UnixNano()
+	n := &Node{
+		idx:       idx,
+		timestamp: now,
+		eventType: "Bootstrap",
+		leader:    0,
+		meta:      region,
+		parents:   []int{},
+		children:  []int{},
 	}
+	h.nodes = append(h.nodes, n)
+	h.latest[region.GetId()] = idx
 }
 
 func (h *regionHistory) lower_bound(x int64) int {

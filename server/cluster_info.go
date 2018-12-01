@@ -460,6 +460,10 @@ func (c *clusterInfo) updateStoreStatusLocked(id uint64) {
 	c.core.Stores.SetRegionSize(id, c.core.Regions.GetStoreRegionSize(id))
 }
 
+func (c *clusterInfo) onBootstrap(region *metapb.Region) {
+	c.regionHistory.onRegionBootstrap(region)
+}
+
 // handleRegionHeartbeat updates the region information.
 func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	c.RLock()
@@ -473,7 +477,6 @@ func (c *clusterInfo) handleRegionHeartbeat(region *core.RegionInfo) error {
 	// Mark isNew if the region in cache does not have leader.
 	var saveKV, saveCache, isNew bool
 	if origin == nil {
-		c.regionHistory.onRegionInsert(region)
 		log.Debugf("[region %d] Insert new region {%v}", region.GetID(), core.HexRegionMeta(region.GetMeta()))
 		saveKV, saveCache, isNew = true, true, true
 	} else {
