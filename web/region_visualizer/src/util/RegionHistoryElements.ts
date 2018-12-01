@@ -85,7 +85,7 @@ namespace GraphicsConfig {
     export const nodeLightness = 0.8;
     export const linkSaturation = 1;
     export const linkLightness = 0.8;
-    export const linkAlpha = 0.5;
+    export const linkAlpha = 0.3;
 }
 
 function scaleTime(interval: number): number {
@@ -193,9 +193,22 @@ function generateLinkPosition(nodes: RegionHistoryNode[], links: RegionHistoryLi
 }
 
 function generateElementColor(nodes: RegionHistoryNode[], links: RegionHistoryLink[]) {
+    let differentStoresCount = 0;
+    let storeSet: any = {};
     for (let node of nodes) {
+        if (storeSet[node.leaderStoreId] == undefined) {
+            storeSet[node.leaderStoreId] = differentStoresCount;
+            ++differentStoresCount;
+        }
+    }
+    // Avoid too hight contrast of two oppisite color
+    let colorCount = Math.max(differentStoresCount, 5);
+    for (let node of nodes) {
+        let hue = 90 + storeSet[node.leaderStoreId] * 360 / colorCount;
+        if (hue > 360)
+            hue -= 360;
         node.color = new Color(
-            Math.random() * 360,
+            hue,
             GraphicsConfig.nodeSaturation,
             GraphicsConfig.nodeLightness,
             1

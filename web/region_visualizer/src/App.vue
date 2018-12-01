@@ -1,10 +1,11 @@
 <template>
     <div id="app">
-        <Navbar @on-all-clicked="onAllClicked" />
+        <Navbar @on-all-clicked="onAllClicked" @on-time-range-set="onTimeRangeSet"/>
         <div class="container">
             <!--<h1 class="title is-1">Region History Visualizer</h1>-->
             <RegionVisualizer :data="data" />
         </div>
+        <b-loading :is-full-page="true" :active.sync="requestInProgress" :can-cancel="false"></b-loading>
     </div>
 </template>
 
@@ -28,7 +29,19 @@
             links: RegionHistoryLink[],
         } = { nodes: [], links: [] };
 
-        hasQuery = false;
+        startTime: Date | null = null;
+        endTime: Date | null = null;
+
+        prevRequest: string = "";
+
+        requestInProgress = false;
+
+        prepareRequestNewData() {
+            if (this.requestInProgress) {
+                throw "Request in progress. Cancelled.";
+            }
+            this.requestInProgress = true;
+        }
 
         receiveNewData(rawNodes: RawNode[]) {
             let res = generateFromRawNode(rawNodes, 1000, 700);
@@ -40,13 +53,32 @@
             alert(err);
         }
 
+        finishRequestData() {
+            this.requestInProgress = false;
+        }
+
+        refresh() {
+            if (this.prevRequest == "all") {
+                this.onAllClicked();
+            }
+        }
+
         // Navbar click logic
         onAllClicked() {
-            DataSource.getALlData(this.receiveNewData, this.handleRequestDataError, () => { });
+            this.prevRequest = "all";
+            this.prepareRequestNewData();
+            DataSource.getALlData(this.receiveNewData, this.handleRequestDataError, this.finishRequestData);
         }
-        
+
+
+        onTimeRangeSet(startTime: Date | null, endTime: Date | null) {
+            this.startTime = startTime;
+            this.endTime = endTime;
+
+            this.refresh();
+        }
     }
 </script>
 
-<style>
+<style lang="scss">
 </style>

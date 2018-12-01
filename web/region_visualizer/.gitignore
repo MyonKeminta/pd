@@ -262,4 +262,6 @@ __pycache__/
 
 # Frontend project's output dir
 dist/
+# Visual studio proj file
+*.njsproj
 
