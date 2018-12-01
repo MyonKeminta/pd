@@ -359,7 +359,7 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 				nodes[i].Children = append(nodes[i].Children, k)
 			}
 		}
-		if len(nodes[i].Children) == 0 {
+		if len(nodes[i].Children) == 0 && nodes[i].Timestamp != endTs {
 			idx := len(nodes)
 			nodes = append(nodes, &Node{
 				Idx: idx,
