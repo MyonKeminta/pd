@@ -140,7 +140,7 @@ func (kv *KV) SaveRegion(region *metapb.Region) error {
 }
 
 func (kv *KV) SaveNode(node *Node) error {
-	key := strconv.FormatInt(node.Timestamp, 10) + strconv.FormatInt(int64(node.Idx), 10) + strconv.FormatUint(node.Meta.GetId(), 10)
+	key := fmt.Sprintf("%016x%016x%016x", node.Timestamp, int64(node.Idx), node.Meta.GetId())
 	value, err := json.Marshal(node)
 	if err != nil {
 		return errors.WithStack(err)
@@ -150,7 +150,7 @@ func (kv *KV) SaveNode(node *Node) error {
 
 func (kv *KV) LoadNodes(rh *RegionHistory) error {
 	startKey := path.Join(nodePath, "0")
-	endKey := path.Join(nodePath, strconv.FormatInt(math.MaxInt64, 10))
+	endKey := path.Join(nodePath, fmt.Sprintf("%016x", math.MaxInt64))
 
 	// Since the region key may be very long, using a larger rangeLimit will cause
 	// the message packet to exceed the grpc message size limit (4MB). Here we use
@@ -174,7 +174,9 @@ func (kv *KV) LoadNodes(rh *RegionHistory) error {
 
 			rh.nodes = append(rh.nodes, node)
 			if node.Idx != len(rh.nodes)-1 {
-				panic("idx not match")
+				panic(fmt.Sprintf("idx not match, node %v, idx %v", node, len(rh.nodes)-1))
+			} else {
+				fmt.Println(fmt.Sprintf("idx match, node %v, idx %v", node, len(rh.nodes)-1))
 			}
 			rh.latest[node.Meta.GetId()] = len(rh.nodes) - 1
 		}
@@ -183,8 +185,8 @@ func (kv *KV) LoadNodes(rh *RegionHistory) error {
 			return nil
 		}
 
-		last := rh.nodes[len(rh.nodes)]
-		startKey = path.Join(nodePath, strconv.FormatInt(last.Timestamp, 10)+strconv.FormatInt(int64(last.Idx+1), 10))
+		last := rh.nodes[len(rh.nodes)-1]
+		startKey = path.Join(nodePath, fmt.Sprintf("%016x%016x", last.Timestamp, int64(last.Idx+1)))
 	}
 
 	return nil
