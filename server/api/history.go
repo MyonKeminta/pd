@@ -24,20 +24,20 @@ func newHistoryHandler(svr *server.Server, rd *render.Render) *historyHandler {
 }
 
 type NodeInfo struct {
-	timestamp int64       `json:"timestamp`
-	leader    uint64      `json:"leader_store_id"`
-	eventType string      `json:"event_type"`
-	meta      *RegionMeta `json:"region"`
-	parents   []int       `json:"parents"`
-	children  []int       `json:"children"`
+	Timestamp int64       `json:"timestamp"`
+	Leader    uint64      `json:"leader_store_id"`
+	EventType string      `json:"event_type"`
+	Meta      *RegionMeta `json:"region"`
+	Parents   []int       `json:"parents"`
+	Children  []int       `json:"children"`
 }
 
 type RegionMeta struct {
-	id          uint64              `json:"id"`
-	startKey    string              `json:"start_key"`
-	endKey      string              `json:"end_key"`
-	regionEpoch *metapb.RegionEpoch `json:"region_epoch"`
-	peers       []*metapb.Peer      `json:"peers"`
+	Id          uint64              `json:"id"`
+	StartKey    string              `json:"start_key"`
+	EndKey      string              `json:"end_key"`
+	RegionEpoch *metapb.RegionEpoch `json:"region_epoch"`
+	Peers       []*metapb.Peer      `json:"peers"`
 }
 
 // type EpochInfo struct {
@@ -47,22 +47,22 @@ type RegionMeta struct {
 
 func newNodeInfo(node *server.Node) *NodeInfo {
 	return &NodeInfo{
-		timestamp: node.GetTimestamp(),
-		leader:    node.GetLeader(),
-		meta:      newRegionMeta(node.GetMeta()),
-		eventType: node.GetEventType(),
-		parents:   node.GetParents(),
-		children:  node.GetChildren(),
+		Timestamp: node.GetTimestamp(),
+		Leader:    node.GetLeader(),
+		EventType: node.GetEventType(),
+		Meta:      newRegionMeta(node.GetMeta()),
+		Parents:   node.GetParents(),
+		Children:  node.GetChildren(),
 	}
 }
 
 func newRegionMeta(meta *metapb.Region) *RegionMeta {
 	return &RegionMeta{
-		id:          meta.Id,
-		startKey:    hex.EncodeToString(meta.StartKey),
-		endKey:      hex.EncodeToString(meta.EndKey),
-		regionEpoch: meta.RegionEpoch,
-		peers:       meta.Peers,
+		Id:          meta.Id,
+		StartKey:    hex.EncodeToString(meta.StartKey),
+		EndKey:      hex.EncodeToString(meta.EndKey),
+		RegionEpoch: meta.RegionEpoch,
+		Peers:       meta.Peers,
 	}
 }
 

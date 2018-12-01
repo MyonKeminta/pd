@@ -31,6 +31,7 @@ const (
 	configPath   = "config"
 	schedulePath = "schedule"
 	gcPath       = "gc"
+	nodePath     = "node"
 )
 
 const (
@@ -136,6 +137,18 @@ func (kv *KV) SaveRegion(region *metapb.Region) error {
 		return kv.regionKV.SaveRegion(region)
 	}
 	return saveProto(kv.KVBase, regionPath(region.GetId()), region)
+}
+
+func (kv *KV) SaveNode(node interface{}) error {
+	value, err := json.Marshal(node)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return kv.Save(nodePath, string(value))
+}
+
+func (kv *KV) LoadNodes(node interface{}) error {
+	return nil
 }
 
 // DeleteRegion deletes one region from KV.

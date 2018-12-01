@@ -134,9 +134,9 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 	router.PathPrefix("/tieye").HandlerFunc(IndexHandler("/Users/Connor/Coding/src/github.com/pingcap/pd/tieye/index.html"))
 
 	historyHandler := newHistoryHandler(svr, rd)
-	router.HandleFunc("/history/list", historyHandler.List).Methods("GET")
-	router.HandleFunc("/history/region/{id}", historyHandler.Region).Methods("GET")
-	router.HandleFunc("/history/key/{key}", historyHandler.Key).Methods("GET")
+	router.HandleFunc("/api/v1/history/list", historyHandler.List).Methods("GET")
+	router.HandleFunc("/api/v1/history/region/{id}", historyHandler.Region).Methods("GET")
+	router.HandleFunc("/api/v1/history/key/{key}", historyHandler.Key).Methods("GET")
 
 	router.HandleFunc(pingAPI, func(w http.ResponseWriter, r *http.Request) {}).Methods("GET")
 	router.Handle("/health", newHealthHandler(svr, rd)).Methods("GET")

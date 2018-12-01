@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"math"
+
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/pd/server/core"
 	log "github.com/sirupsen/logrus"
-	"math"
 )
 
 type Node struct {
@@ -206,8 +207,9 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
+
 	now := time.Now().UnixNano()
-	log.Infof("[Boorstrap] region %v, ts: %v", region.GetId(), now)
+	log.Infof("[Bootstrap] region %v, ts: %v", region.GetId(), now)
 	idx := len(h.nodes)
 	// the first region
 	n := &Node{
@@ -242,6 +244,7 @@ func (h *regionHistory) lower_bound(x int64) int {
 func (h *regionHistory) getHistoryList(start, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
+
 	if end == 0 {
 		end = math.MaxInt64
 	}
@@ -335,6 +338,7 @@ func (h *regionHistory) filter(ans []*Node) []*Node {
 func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
+
 	if end == 0 {
 		end = math.MaxInt64
 	}
@@ -349,6 +353,7 @@ func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end i
 func (h *regionHistory) getKeyHistoryList(key []byte, regionID uint64, start int64, end int64) []*Node {
 	h.RLock()
 	defer h.RUnlock()
+
 	if end == 0 {
 		end = math.MaxInt64
 	}
