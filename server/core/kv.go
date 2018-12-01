@@ -139,15 +139,51 @@ func (kv *KV) SaveRegion(region *metapb.Region) error {
 	return saveProto(kv.KVBase, regionPath(region.GetId()), region)
 }
 
-func (kv *KV) SaveNode(key string, node interface{}) error {
+func (kv *KV) SaveNode(node *Node) error {
+	key := strconv.FormatInt(node.timestamp, 10) + strconv.FormatUint(node.meta.GetId(), 10)
 	value, err := json.Marshal(node)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	return kv.Save(nodePath, string(value))
+	return kv.Save(path.Join(nodePath, key), string(value))
 }
 
-func (kv *KV) LoadNodes(node interface{}) error {
+func (kv *KV) LoadNodes(rh *RegionHistory) error {
+	startKey := path.Join(nodePath, "0")
+	endKey := path.Join(nodePath, strconv.FormatInt(math.MaxInt64, 10))
+
+	// Since the region key may be very long, using a larger rangeLimit will cause
+	// the message packet to exceed the grpc message size limit (4MB). Here we use
+	// a variable rangeLimit to work around.
+	rangeLimit := maxKVRangeLimit
+	for {
+		res, err := kv.LoadRange(startKey, endKey, rangeLimit)
+		if err != nil {
+			if rangeLimit /= 2; rangeLimit >= minKVRangeLimit {
+				continue
+			}
+			return err
+		}
+
+		for _, s := range res {
+			node := &Node{}
+
+			if err := json.Unmarshal([]byte(s), node); err != nil {
+				return errors.WithStack(err)
+			}
+
+			rh.nodes = append(rh.nodes, node)
+			rh.latest[node.meta.GetId()] = len(rh.nodes) - 1
+		}
+
+		if len(res) < rangeLimit {
+			return nil
+		}
+
+		last := rh.nodes[len(rh.nodes)]
+		startKey = path.Join(nodePath, strconv.FormatInt(last.timestamp+1, 10))
+	}
+
 	return nil
 }
 

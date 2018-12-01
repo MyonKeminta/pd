@@ -82,6 +82,12 @@ func loadClusterInfo(id core.IDAllocator, kv *core.KV, opt *scheduleOption) (*cl
 	}
 	log.Infof("load %v regions cost %v", c.core.Regions.GetRegionCount(), time.Since(start))
 
+	start = time.Now()
+	if err := kv.LoadNodes(c.regionHistory); err != nil {
+		return nil, err
+	}
+	log.Infof("load %v histories cost %v", c.regionHistory.GetHistoryCount(), time.Since(start))
+
 	return c, nil
 }
 
