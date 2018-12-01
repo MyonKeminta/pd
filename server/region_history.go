@@ -226,17 +226,17 @@ func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 func (h *regionHistory) lower_bound(x int64) int {
 	l := 0
 	r := len(h.nodes)
+	ans := r
 	for l < r {
 		mid := (l + r) >> 1
-		if h.nodes[mid].timestamp == x {
-			return mid
-		} else if h.nodes[mid].timestamp <= x {
-			l = mid
-		} else {
+		if h.nodes[mid].timestamp >= x {
+			ans = mid
 			r = mid
+		} else {
+			l = mid + 1
 		}
 	}
-	return r
+	return ans
 }
 
 func (h *regionHistory) getHistoryList(start, end int64) []*Node {
