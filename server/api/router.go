@@ -134,7 +134,7 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 	router.PathPrefix("/tieye").HandlerFunc(IndexHandler("/Users/Connor/Coding/src/github.com/pingcap/pd/tieye/index.html"))
 
 	historyHandler := newHistoryHandler(svr, rd)
-	router.HandleFunc("/history/list/{start}/{end}", historyHandler.List).Methods("GET")
+	router.HandleFunc("/history/list", historyHandler.List).Methods("GET")
 	router.HandleFunc("/history/region/{id}", historyHandler.Region).Methods("GET")
 	router.HandleFunc("/history/key/{key}", historyHandler.Key).Methods("GET")
 

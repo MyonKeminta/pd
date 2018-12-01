@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -11,7 +12,7 @@ import (
 )
 
 type Node struct {
-	idx int
+	idx       int
 	timestamp int64 // unix-nano
 	leader    uint64
 	eventType string
@@ -26,7 +27,33 @@ type Node struct {
 	children []int
 }
 
+func (n *Node) GetTimestamp() int64 {
+	return n.timestamp
+}
+
+func (n *Node) GetLeader() uint64 {
+	return n.leader
+}
+
+func (n *Node) GetEventType() string {
+	return n.eventType
+}
+
+func (n *Node) GetMeta() *metapb.Region {
+	return n.meta
+}
+
+func (n *Node) GetParents() []int {
+	return n.parents
+}
+
+func (n *Node) GetChildren() []int {
+	return n.children
+}
+
 type regionHistory struct {
+	sync.RWMutex
+
 	nodes []*Node
 	kv    *core.KV
 
@@ -43,6 +70,9 @@ func newRegionHistory(kv *core.KV) *regionHistory {
 }
 
 func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region) {
+	h.Lock()
+	defer h.Unlock()
+
 	index, ok := h.latest[originID]
 	if !ok {
 		log.Errorf("[Split] not found latest info of region %v", originID)
@@ -54,7 +84,7 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 	for _, region := range regions {
 		idx := len(h.nodes)
 		n := &Node{
-			idx : idx,
+			idx:       idx,
 			timestamp: now,
 			eventType: "Split",
 			leader:    origin.leader,
@@ -71,6 +101,9 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 }
 
 func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metapb.Region) {
+	h.Lock()
+	defer h.Unlock()
+
 	now := time.Now().UnixNano()
 	var parents []int
 
@@ -95,7 +128,7 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 	}
 	idx := len(h.nodes)
 	n := &Node{
-		idx : idx,
+		idx:       idx,
 		timestamp: now,
 		eventType: "Merge",
 		leader:    region.GetLeader().GetStoreId(),
@@ -109,8 +142,10 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 }
 
 func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
-	now := time.Now().UnixNano()
+	h.Lock()
+	defer h.Unlock()
 
+	now := time.Now().UnixNano()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Leader] not found latest info of region %v", region.GetID())
@@ -121,7 +156,7 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 	idx := len(h.nodes)
 
 	n := &Node{
-		idx: idx,
+		idx:       idx,
 		timestamp: now,
 		eventType: "LeaderChange",
 		leader:    region.GetLeader().GetStoreId(),
@@ -136,8 +171,10 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 }
 
 func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
-	now := time.Now().UnixNano()
+	h.Lock()
+	defer h.Unlock()
 
+	now := time.Now().UnixNano()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Conf] not found latest info of region %v", region.GetID())
@@ -147,7 +184,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	idx := len(h.nodes)
 
 	n := &Node{
-		idx: idx,
+		idx:       idx,
 		timestamp: now,
 		eventType: "ConfChange",
 		leader:    region.GetLeader().GetStoreId(),
@@ -162,6 +199,9 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 }
 
 func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
+	h.Lock()
+	defer h.Unlock()
+
 	_, ok := h.latest[region.GetID()]
 	if ok {
 		// means it comes from split
@@ -172,7 +212,7 @@ func (h *regionHistory) onRegionInsert(region *core.RegionInfo) {
 		// the first region
 		now := time.Now().UnixNano()
 		n := &Node{
-			idx: idx,
+			idx:       idx,
 			timestamp: now,
 			eventType: "Init",
 			leader:    region.GetLeader().GetStoreId(),
@@ -189,7 +229,7 @@ func (h *regionHistory) lower_bound(x int64) int {
 	l := 0
 	r := len(h.nodes)
 	for l < r {
-		mid := (l + r ) >> 1
+		mid := (l + r) >> 1
 		if h.nodes[mid].timestamp == x {
 			return mid
 		} else if h.nodes[mid].timestamp <= x {
@@ -202,16 +242,19 @@ func (h *regionHistory) lower_bound(x int64) int {
 }
 
 func (h *regionHistory) getHistoryList(start, end int64) []*Node {
+	h.RLock()
+	defer h.RUnlock()
+
 	if end < start {
 		return nil
 	}
 	stIndex := h.lower_bound(start)
 	edIndex := h.lower_bound(end)
 	if edIndex < len(h.nodes) && h.nodes[edIndex].timestamp == end {
-		edIndex ++
+		edIndex++
 	}
 	if edIndex > stIndex {
-		return h.nodes[stIndex : edIndex]
+		return h.nodes[stIndex:edIndex]
 	}
 	return nil
 }
@@ -226,7 +269,7 @@ func (h *regionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 	mp[index] = true
 	for st < ed {
 		v := que[st]
-		st ++
+		st++
 		if h.nodes[v].timestamp >= start && h.nodes[v].timestamp <= end {
 			ans = append(ans, h.nodes[v])
 		}
@@ -239,13 +282,16 @@ func (h *regionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 			}
 			que = append(que, u)
 			mp[u] = true
-			ed ++
+			ed++
 		}
 	}
 	return ans
 }
 
-func (h *regionHistory) filter(ans []*Node) []*Node{
+func (h *regionHistory) filter(ans []*Node) []*Node {
+	h.RLock()
+	defer h.RUnlock()
+
 	if len(ans) == 0 {
 		return nil
 	}
@@ -256,11 +302,11 @@ func (h *regionHistory) filter(ans []*Node) []*Node{
 	}
 	for i, n := range ans {
 		nodes[i] = &Node{
-			idx: n.idx,
+			idx:       n.idx,
 			timestamp: n.timestamp,
 			eventType: n.eventType,
-			leader: n.leader,
-			meta: n.meta,
+			leader:    n.leader,
+			meta:      n.meta,
 			parents:   []int{},
 			children:  []int{},
 		}
@@ -282,14 +328,23 @@ func (h *regionHistory) filter(ans []*Node) []*Node{
 }
 
 func (h *regionHistory) getRegionHistoryList(regionID uint64, start int64, end int64) []*Node {
+	h.RLock()
+	defer h.RUnlock()
+
 	index, ok := h.latest[regionID]
 	if ok {
 		return h.filter(h.findPrevNodes(index, start, end))
 	}
+	h.RLock()
+	defer h.RUnlock()
+
 	return nil
 }
 
 func (h *regionHistory) getKeyHistoryList(key []byte, regionID uint64, start int64, end int64) []*Node {
+	h.RLock()
+	defer h.RUnlock()
+
 	index, ok := h.latest[regionID]
 	if !ok {
 		return nil

@@ -220,14 +220,16 @@ func (c *RaftCluster) GetHistoryList(start, end int64) []*Node {
 	return c.cachedCluster.regionHistory.getHistoryList(start, end)
 }
 
-func (c *RaftCluster) GetRegionHistoryList(regionID uint64) []*Node {
-	return nil
-	//return c.cachedCluster.regionHistory.getRegionHistoryList(regionID)
+func (c *RaftCluster) GetRegionHistoryList(start, end int64, regionID uint64) []*Node {
+	return c.cachedCluster.regionHistory.getRegionHistoryList(regionID, start, end)
 }
 
-func (c *RaftCluster) GetKeyHistoryList(key []byte) []*Node {
-	return nil
-	//return c.cachedCluster.regionHistory.getKeyHistoryList(key)
+func (c *RaftCluster) GetKeyHistoryList(start, end int64, key []byte) []*Node {
+	r := c.GetRegionInfoByKey(key)
+	if r == nil {
+		return make([]*Node, 0)
+	}
+	return c.cachedCluster.regionHistory.getKeyHistoryList(key, r.GetID(), start, end)
 }
 
 // GetRegionByKey gets region and leader peer by region key from cluster.
