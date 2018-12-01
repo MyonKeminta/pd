@@ -14,7 +14,7 @@ import (
 
 type Node struct {
 	idx       int
-	timestamp int64 // unix-nano
+	timestamp int64 // UnixNano-nano
 	leader    uint64
 	eventType string
 
@@ -79,7 +79,7 @@ func (h *regionHistory) onRegionSplit(originID uint64, regions []*metapb.Region)
 		log.Errorf("[Split] not found latest info of region %v", originID)
 		return
 	}
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	log.Infof("[RegionSplit] region %v, ts: %v", originID, now)
 	origin := h.nodes[index]
 
@@ -106,7 +106,7 @@ func (h *regionHistory) onRegionMerge(region *core.RegionInfo, overlaps []*metap
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	log.Infof("[RegionMerge] region %v, ts: %v", region.GetID(), now)
 	var parents []int
 
@@ -148,7 +148,7 @@ func (h *regionHistory) onRegionLeaderChange(region *core.RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Leader] not found latest info of region %v", region.GetID())
@@ -178,7 +178,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 	h.Lock()
 	defer h.Unlock()
 
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	index, ok := h.latest[region.GetID()]
 	if !ok {
 		log.Errorf("[Conf] not found latest info of region %v", region.GetID())
@@ -206,7 +206,7 @@ func (h *regionHistory) onRegionConfChange(region *core.RegionInfo) {
 func (h *regionHistory) onRegionBootstrap(region *metapb.Region) {
 	h.Lock()
 	defer h.Unlock()
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	log.Infof("[Boorstrap] region %v, ts: %v", region.GetId(), now)
 	idx := len(h.nodes)
 	// the first region
