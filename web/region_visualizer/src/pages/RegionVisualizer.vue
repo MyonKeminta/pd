@@ -190,7 +190,7 @@
         #svg-container > svg {
             width: 100%;
             height: 800px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            /*border: 1px solid rgba(0, 0, 0, 0.1);*/
         }
 
             #svg-container > svg * {

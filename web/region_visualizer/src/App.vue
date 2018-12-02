@@ -1,7 +1,7 @@
 <template>
     <div id="app">
         <Navbar @on-all-clicked="onAllClicked" @on-key-clicked="onKeyClicked" @on-region-clicked="onRegionClicked" @on-time-range-set="onTimeRangeSet" @on-settings-changed="onSettingsChanged" />
-        <div class="container">
+        <div class="container" id="region-visualizer-container">
             <!--<h1 class="title is-1">Region History Visualizer</h1>-->
             <RegionVisualizer :data="data" />
         </div>
@@ -149,5 +149,9 @@
         }
     }
 </script>
+
 <style lang="scss">
+    #region-visualizer-container {
+        /*background-image: url("./assets/tieye.png")*/
+    }
 </style>

@@ -12,37 +12,7 @@ const MOCK_DATA = [
     [
         {
             "timestamp": 0,
-            "event_type": "fuck",
-            "region": {
-                "id": 4,
-                "start_key": "D",
-                "end_key": "F",
-                "region_epoch": {
-                    "conf_ver": 101,
-                    "version": 119
-                },
-                "peers": [
-                    {
-                        "id": 448632,
-                        "store_id": 7
-                    },
-                    {
-                        "id": 664362,
-                        "store_id": 167149
-                    },
-                    {
-                        "id": 677615,
-                        "store_id": 185553
-                    }
-                ]
-            },
-            "leader_store_id": 1,
-            "parents": [],
-            "children": [2]
-        },
-        {
-            "timestamp": 1,
-            "event_type": "fuck",
+            "event_type": "Bootstrap",
             "region": {
                 "id": 1,
                 "start_key": "A",
@@ -68,11 +38,41 @@ const MOCK_DATA = [
             },
             "leader_store_id": 1,
             "parents": [],
+            "children": [1]
+        },
+        {
+            "timestamp": 1,
+            "event_type": "LeaderChange",
+            "region": {
+                "id": 1,
+                "start_key": "A",
+                "end_key": "D",
+                "region_epoch": {
+                    "conf_ver": 101,
+                    "version": 119
+                },
+                "peers": [
+                    {
+                        "id": 448632,
+                        "store_id": 7
+                    },
+                    {
+                        "id": 664362,
+                        "store_id": 167149
+                    },
+                    {
+                        "id": 677615,
+                        "store_id": 185553
+                    }
+                ]
+            },
+            "leader_store_id": 1,
+            "parents": [0],
             "children": [2, 3]
         },
         {
             "timestamp": 9,
-            "event_type": "fuck",
+            "event_type": "Split",
             "region": {
                 "id": 2,
                 "start_key": "C",
@@ -97,12 +97,12 @@ const MOCK_DATA = [
                 ]
             },
             "leader_store_id": 1,
-            "parents": [0, 1],
+            "parents": [1],
             "children": [4]
         },
         {
-            "timestamp": 10,
-            "event_type": "fuck",
+            "timestamp": 9,
+            "event_type": "Split",
             "region": {
                 "id": 1,
                 "start_key": "A",
@@ -128,11 +128,11 @@ const MOCK_DATA = [
             },
             "leader_store_id": 1,
             "parents": [1],
-            "children": [4, 5]
+            "children": [4]
         },
         {
             "timestamp": 13,
-            "event_type": "fuck",
+            "event_type": "Merge",
             "region": {
                 "id": 1,
                 "start_key": "B",
@@ -158,41 +158,11 @@ const MOCK_DATA = [
             },
             "leader_store_id": 1,
             "parents": [2, 3],
-            "children": [6]
-        },
-        {
-            "timestamp": 15,
-            "event_type": "fuck",
-            "region": {
-                "id": 3,
-                "start_key": "A",
-                "end_key": "B",
-                "region_epoch": {
-                    "conf_ver": 101,
-                    "version": 119
-                },
-                "peers": [
-                    {
-                        "id": 448632,
-                        "store_id": 7
-                    },
-                    {
-                        "id": 664362,
-                        "store_id": 167149
-                    },
-                    {
-                        "id": 677615,
-                        "store_id": 185553
-                    }
-                ]
-            },
-            "leader_store_id": 1,
-            "parents": [3],
-            "children": []
+            "children": [5]
         },
         {
             "timestamp": 16,
-            "event_type": "fuck",
+            "event_type": " ",
             "region": {
                 "id": 1,
                 "start_key": "B",
