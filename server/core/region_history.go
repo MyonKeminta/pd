@@ -328,11 +328,25 @@ func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 		if h.nodes[v].Timestamp >= start && h.nodes[v].Timestamp <= end {
 			ans = append(ans, h.nodes[v])
 		}
+		if h.nodes[v].Meta.GetId() != h.nodes[index].Meta.GetId() {
+			continue
+		}
 		for _, u := range h.nodes[v].Parents {
 			if _, ok := mp[u]; ok {
 				continue
 			}
 			if h.nodes[u].Timestamp < start {
+				continue
+			}
+			que = append(que, u)
+			mp[u] = true
+			ed++
+		}
+		for _, u := range h.nodes[v].Children {
+			if _, ok := mp[u]; ok {
+				continue
+			}
+			if h.nodes[u].Timestamp < start || u > index {
 				continue
 			}
 			que = append(que, u)
