@@ -2,8 +2,10 @@
 import { RawNode } from './RegionHistoryElements';
 import { setTimeout } from 'timers';
 
-const USE_MOCK_DATA = false;
+const USE_MOCK_DATA = true;
+
 function pdPrefix(path: string): string {
+    //return "http://localhost:2379/pd/api/v1/history/" + path;
     return "http://192.168.197.105:2379/pd/api/v1/history/" + path;
     //return "/pd/api/v1/history/" + path;
 }
@@ -36,7 +38,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [],
             "children": [2]
         },
@@ -66,7 +68,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [],
             "children": [2, 3]
         },
@@ -96,7 +98,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [0, 1],
             "children": [4]
         },
@@ -126,7 +128,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [1],
             "children": [4, 5]
         },
@@ -156,7 +158,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [2, 3],
             "children": [6]
         },
@@ -186,7 +188,7 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [3],
             "children": []
         },
@@ -216,14 +218,14 @@ const MOCK_DATA = [
                     }
                 ]
             },
-            "leader_store_id": 7,
+            "leader_store_id": 1,
             "parents": [4],
             "children": []
         }
     ]
 ]
 
-type StringDict = { [key: string]: string };
+export type StringDict = { [key: string]: string };
 
 function getMockData(onSuccess: (_: RawNode[]) => void, _onError: (_: any) => void, onFinish: () => void) {
     setTimeout(() => {
@@ -232,9 +234,9 @@ function getMockData(onSuccess: (_: RawNode[]) => void, _onError: (_: any) => vo
     }, 1500);
 }
 
-function getDataFromPdApi(path: string, params : StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+function getDataFromPdApi(path: string, params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
     Axios.get<RawNode[]>(pdPrefix(path), {
-        params  : params
+        params: params
     })
         .then(res => onSuccess(res.data))
         .catch(onError)
@@ -250,19 +252,19 @@ namespace DataSource {
         }
     }
 
-    export function getDataByRegion(params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+    export function getDataByRegion(regionId: number, params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
         if (USE_MOCK_DATA) {
             getMockData(onSuccess, onError, onFinish);
         } else {
-            getDataFromPdApi("region/" + params["regionId"], params, onSuccess, onError, onFinish);
+            getDataFromPdApi("region/" + regionId, params, onSuccess, onError, onFinish);
         }
     }
 
-    export function getDataByKey(params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
+    export function getDataByKey(key: string, params: StringDict, onSuccess: (_: RawNode[]) => void, onError: (_: any) => void, onFinish: () => void) {
         if (USE_MOCK_DATA) {
             getMockData(onSuccess, onError, onFinish);
         } else {
-            getDataFromPdApi("key/" + params["key"], params, onSuccess, onError, onFinish);
+            getDataFromPdApi("key/" + key, params, onSuccess, onError, onFinish);
         }
     }
 }
