@@ -16,39 +16,47 @@
                           :x="(node.left + node.right) / 2" :y="(node.top + node.bottom) / 2" text-anchor="middle" dominant-baseline="central"
                           fill="#888888">{{ node.region.id }}</text>
                 </g>
-                <g id="svg-graph-links" stroke="rgba(0,0,0,0.5)">
+                <g id="svg-graph-links" stroke="rgba(0,0,0,0.05)">
                     <path v-for="(link, index) in data.links" :key="link.id"
                           :d="calculatePath(link)" :fill="'url(#grad-link-' + index + ')'" />
                 </g>
             </svg>
         </div>
-        <transition name="slide-fade">
-            <div id="svg-node-detail-tip-box" v-if="showNodeInfo">
-                <nav class="panel">
-                    <p class="panel-heading">
-                        Node {{ nodeToShow.region.id }}, {{ nodeToShow.timestamp }}
-                    </p>
-                    <div class="panel-block">
-                        <b-table :data="getNodeDetails(nodeToShow, false)" :columns="[{field: 'name'}, {field: 'value'}]">
-                        </b-table>
-                    </div>
-                </nav>
-            </div>
-        </transition>
+        <vue-slider ref="slider" v-model="displayRange" :interval="1" :processDragable="true" :min="0" :max="100"
+                    :tooltipDir="['bottom', 'bottom']" :formatter="'{value}%'" :mergeFormatter="'{value1}% ~ {value2}%'"></vue-slider>
+        <div id="svg-node-detail-tip-box" v-if="showNodeInfo">
+            <nav class="panel">
+                <p class="panel-heading">
+                    Node {{ nodeToShow.region.id }}, {{ nodeToShow.timestamp }}
+                </p>
+                <div class="panel-block">
+                    <b-table :data="getNodeDetails(nodeToShow, false)" :columns="[{field: 'name'}, {field: 'value'}]">
+                    </b-table>
+                </div>
+            </nav>
+        </div>
     </div>
 </template>
-
 <script lang="ts">
     import { Component, Prop, Vue } from 'vue-property-decorator';
+    import vueSlider from 'vue-slider-component';
 
     import { RegionHistoryNode, RegionHistoryLink } from '../util/RegionHistoryElements'
 
-    @Component
+    @Component({
+        components: {
+            vueSlider,
+        }
+    })
     export default class RegionVisualizer extends Vue {
         @Prop(Object) data!: {
             nodes: RegionHistoryNode[],
             links: RegionHistoryLink[],
         };
+
+        displayRange: [number, number] = [0, 100];
+
+        width = 1300;
 
         hovering = false;
         hoveringNode: RegionHistoryNode | null = null;
@@ -81,6 +89,8 @@
         }
 
         calculatePath(link: RegionHistoryLink): string {
+            //let left = this.nodeRight(this.data.nodes[link.leftIndex]);
+            //let right = this.nodeLeft(this.data.nodes[link.rightIndex]);
             let middleLeft = (link.left * 1 + link.right) / 2;
             let middleRight = (link.left + link.right * 1) / 2;
             let res = `M ${link.left},${link.topLeft} C ${middleLeft},${link.topLeft} ${middleRight},${link.topRight} ${link.right},${link.topRight} `
@@ -115,11 +125,19 @@
 
             return result;
         }
+
+        nodeLeft(node: RegionHistoryNode): number {
+            return (node.left - this.displayRange[0] * this.width) / (this.displayRange[1] - this.displayRange[0]);
+        }
+
+        nodeRight(node: RegionHistoryNode): number {
+            return this.nodeLeft(node) + node.right - node.left;
+        }
     }
 </script>
-
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+
     #svg-container {
         width: 100%;
         padding-top: 2px;
@@ -127,13 +145,13 @@
 
         #svg-container > svg {
             width: 100%;
-            height: 700px;
+            height: 800px;
             border: 1px solid rgba(0, 0, 0, 0.1);
         }
 
-    #svg-container > svg * {
-        transition: all ease-in-out 0.5s;
-    }
+            #svg-container > svg * {
+                transition: all ease-in-out 0.5s;
+            }
 
     #svg-graph-links > path {
         mix-blend-mode: multiply;
@@ -152,9 +170,10 @@
         width: auto;
         height: auto;
         opacity: 0.9;
+        z-index: 10000;
     }
 
-    #svg-node-detail-tip-box div.panel-block {
-        background: white;
-    }
+        #svg-node-detail-tip-box div.panel-block {
+            background: white;
+        }
 </style>

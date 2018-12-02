@@ -81,9 +81,9 @@ namespace GraphicsConfig {
     export const nodeMaxHeight = 1500;
     export const nodeVerticalGap = 10;
 
-    export const nodeSaturation = 1;
-    export const nodeLightness = 0.8;
-    export const linkSaturation = 1;
+    export const nodeSaturation = 0.95;
+    export const nodeLightness = 0.85;
+    export const linkSaturation = 0.95;
     export const linkLightness = 0.8;
     export const linkAlpha = 0.3;
 }
@@ -196,7 +196,7 @@ export function generateElementColor(nodes: RegionHistoryNode[], links: RegionHi
     if (random) {
         for (let node of nodes) {
             node.color = new Color(
-                Math.random() * 360,
+                Math.random() * 270,
                 GraphicsConfig.nodeSaturation,
                 GraphicsConfig.nodeLightness,
                 1
@@ -214,7 +214,7 @@ export function generateElementColor(nodes: RegionHistoryNode[], links: RegionHi
         // Avoid too hight contrast of two oppisite color
         let colorCount = Math.max(differentStoresCount, 5);
         for (let node of nodes) {
-            let hue = 90 + storeSet[node.leaderStoreId] * 360 / colorCount;
+            let hue = 90 + storeSet[node.leaderStoreId] * 270 / colorCount;
             if (hue > 360)
                 hue -= 360;
             node.color = new Color(
