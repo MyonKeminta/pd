@@ -48,10 +48,18 @@
         }
 
         receiveNewData(rawNodes: RawNode[]) {
+            if (rawNodes.length == 0) {
+                this.$toast.open({
+                    message: 'No data to display.',
+                    type: 'is-warning',
+                    position: 'is-bottom-right',
+                });
+                return;
+            }
             let res = generateFromRawNode(
                 rawNodes, this.nodeFullHeight ? 10000 : 150,
                 1300,
-                700,
+                800,
                 this.nodeRandomColor
             );
             this.data.nodes = res.nodes;
@@ -132,7 +140,7 @@
         onSettingsChanged(name: string, value: boolean) {
             if (name == "fullHeight") {
                 this.nodeFullHeight = value;
-                generateNodePositions(this.data.nodes, value ? 10000 : 150, 1300, 700);
+                generateNodePositions(this.data.nodes, value ? 10000 : 150, 1300, 800);
                 generateLinkPosition(this.data.nodes, this.data.links);
             } else if (name == "randomColor") {
                 this.nodeRandomColor = value;

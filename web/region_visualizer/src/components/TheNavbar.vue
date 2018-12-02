@@ -85,7 +85,7 @@
                                 <div class="field">
                                     <section class="modal-card-body">
                                         <div class="field">
-                                            <b-switch v-model="fullHeight">{{ fullHeight ? "Full height" : "Unified height" }}</b-switch>
+                                            <b-switch v-model="fullHeight">{{ fullHeight ? "Full Height" : "Unified Height" }}</b-switch>
                                         </div>
                                         <div>
                                             <b-switch v-model="randomColor">{{ randomColor ? "Random Color" : "Color By Leader" }}</b-switch>
@@ -103,7 +103,6 @@
 
 <script lang="ts">
     import { Component, Vue, Watch } from 'vue-property-decorator';
-    import { watch } from 'fs';
 
     @Component
     export default class Navbar extends Vue {
