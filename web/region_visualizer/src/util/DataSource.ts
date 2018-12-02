@@ -2,12 +2,10 @@
 import { RawNode } from './RegionHistoryElements';
 import { setTimeout } from 'timers';
 
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 
 function pdPrefix(path: string): string {
-    //return "http://localhost:2379/pd/api/v1/history/" + path;
-    return "http://192.168.197.105:2379/pd/api/v1/history/" + path;
-    //return "/pd/api/v1/history/" + path;
+    return "/pd/api/v1/history/" + path;
 }
 
 const MOCK_DATA = [
