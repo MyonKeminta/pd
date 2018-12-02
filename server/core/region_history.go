@@ -51,6 +51,18 @@ func (n *Node) GetChildren() []int {
 	return n.Children
 }
 
+func (n *Node) IsKeyInRange(key string) bool {
+	stKey := n.Meta.GetStartKey()
+	if stKey != nil && string(stKey) > key {
+		return false
+	}
+	edKey := n.Meta.GetEndKey()
+	if edKey != nil && string(edKey) != "" && string(edKey) < key {
+		return false
+	}
+	return true
+}
+
 type RegionHistory struct {
 	sync.RWMutex
 
@@ -325,10 +337,7 @@ func (h *RegionHistory) findKeyHistory(index int, key string, start int64, end i
 	for st < ed {
 		v := que[st]
 		st++
-		if h.nodes[v].Meta.GetStartKey() != nil && string(h.nodes[v].Meta.GetStartKey()) > key {
-			continue
-		}
-		if h.nodes[v].Meta.GetEndKey() != nil && string(h.nodes[v].Meta.GetEndKey()) < key {
+		if !h.nodes[v].IsKeyInRange(key) {
 			continue
 		}
 
@@ -477,6 +486,9 @@ func (h *RegionHistory) GetKeyHistoryList(key []byte, regionID uint64, start int
 		return nil
 	}
 	keyStr := string(key)
+	if !h.nodes[index].IsKeyInRange(keyStr) {
+		panic(fmt.Sprintf("key [%v] is not in regionID[%v], [%v, %v)", key, regionID, h.nodes[index].Meta.GetStartKey(), h.nodes[index].Meta.GetEndKey()))
+	}
 	return h.filter(h.findKeyHistory(index, keyStr, start, end), false)
 
 }
