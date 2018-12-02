@@ -95,7 +95,9 @@ func (h *historyHandler) List(w http.ResponseWriter, r *http.Request) {
 		h.r.JSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	list := cluster.GetHistoryList(start, end)
+	stKey := r.URL.Query().Get("startKey")
+	edKey := r.URL.Query().Get("endKey")
+	list := cluster.GetHistoryList(start, end, stKey, edKey)
 
 	h.r.JSON(w, http.StatusOK, convertToAPINodeInfos(list))
 }

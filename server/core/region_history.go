@@ -303,7 +303,7 @@ func (h *RegionHistory) lower_bound(x int64) int {
 	return ans
 }
 
-func (h *RegionHistory) GetHistoryList(start, end int64) []*Node {
+func (h *RegionHistory) GetHistoryList(start int64, end int64, stKey string, edKey string) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
@@ -321,7 +321,27 @@ func (h *RegionHistory) GetHistoryList(start, end int64) []*Node {
 	}
 	log.Infof("[getHistoryList] %v, stIndex: %v, edIndex : %v", len(h.nodes), stIndex, edIndex)
 	if edIndex > stIndex {
-		return h.filter(h.nodes[stIndex:edIndex], true)
+		if stKey == "" && edKey == "" {
+			return h.filter(h.nodes[stIndex:edIndex], true)
+		} else {
+			ans := make([]*Node, 0)
+			for stIndex < edIndex {
+				meta := h.nodes[stIndex].Meta
+				ed := string(meta.GetEndKey())
+				if ed != "" && ed < stKey {
+					stIndex ++
+					continue
+				}
+				st := string(meta.GetStartKey())
+				if edKey != "" && st > edKey {
+					stIndex ++
+					continue
+				}
+				ans = append(ans, h.nodes[stIndex])
+				stIndex ++
+			}
+			return h.filter(ans, true)
+		}
 	}
 	return nil
 }

@@ -216,8 +216,8 @@ func checkBootstrapRequest(clusterID uint64, req *pdpb.BootstrapRequest) error {
 	return nil
 }
 
-func (c *RaftCluster) GetHistoryList(start, end int64) []*core.Node {
-	return c.cachedCluster.regionHistory.GetHistoryList(start, end)
+func (c *RaftCluster) GetHistoryList(start int64, end int64, stKey string, edKey string) []*core.Node {
+	return c.cachedCluster.regionHistory.GetHistoryList(start, end, stKey, edKey)
 }
 
 func (c *RaftCluster) GetRegionHistoryList(start, end int64, regionID uint64) []*core.Node {
