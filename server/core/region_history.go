@@ -340,6 +340,7 @@ func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 			ed++
 		}
 	}
+	sort.Slice(ans, func(i, j int) bool { return ans[i].Idx < ans[j].Idx })
 	log.Infof("[find prev node] index: %d, count : %v", index, ed)
 	return ans
 }
