@@ -309,9 +309,48 @@ func (h *RegionHistory) GetHistoryList(start, end int64) []*Node {
 	}
 	log.Infof("[getHistoryList] %v, stIndex: %v, edIndex : %v", len(h.nodes), stIndex, edIndex)
 	if edIndex > stIndex {
-		return h.filter(h.nodes[stIndex:edIndex])
+		return h.filter(h.nodes[stIndex:edIndex], true)
 	}
 	return nil
+}
+
+func (h *RegionHistory) findKeyHistory(index int, key string, start int64, end int64) []*Node {
+	var que []int
+	var ans []*Node
+	que = append(que, index)
+	mp := make(map[int]bool)
+	st := 0
+	ed := 1
+	mp[index] = true
+	for st < ed {
+		v := que[st]
+		st++
+		if h.nodes[v].Meta.GetStartKey() != nil && string(h.nodes[v].Meta.GetStartKey()) > key {
+			continue
+		}
+		if h.nodes[v].Meta.GetEndKey() != nil && string(h.nodes[v].Meta.GetEndKey()) < key {
+			continue
+		}
+
+		if h.nodes[v].Timestamp >= start && h.nodes[v].Timestamp <= end {
+			ans = append(ans, h.nodes[v])
+		}
+		for _, u := range h.nodes[v].Parents {
+			if _, ok := mp[u]; ok {
+				continue
+			}
+			if h.nodes[u].Timestamp < start {
+				continue
+			}
+			que = append(que, u)
+			mp[u] = true
+			ed++
+		}
+
+	}
+	sort.Slice(ans, func(i, j int) bool { return ans[i].Idx < ans[j].Idx })
+	log.Infof("[find key history] index: %d, count : %v", index, ed)
+	return ans
 }
 
 func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node {
@@ -328,6 +367,16 @@ func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 		if h.nodes[v].Timestamp >= start && h.nodes[v].Timestamp <= end {
 			ans = append(ans, h.nodes[v])
 		}
+		for _, u := range h.nodes[v].Children {
+			if _, ok := mp[u]; ok {
+				continue
+			}
+			if h.nodes[u].Timestamp < start || u >= index {
+				continue
+			}
+			mp[u] = true
+			ans = append(ans, h.nodes[u])
+		}
 		if h.nodes[v].Meta.GetId() != h.nodes[index].Meta.GetId() {
 			continue
 		}
@@ -342,24 +391,14 @@ func (h *RegionHistory) findPrevNodes(index int, start int64, end int64) []*Node
 			mp[u] = true
 			ed++
 		}
-		for _, u := range h.nodes[v].Children {
-			if _, ok := mp[u]; ok {
-				continue
-			}
-			if h.nodes[u].Timestamp < start || u > index {
-				continue
-			}
-			que = append(que, u)
-			mp[u] = true
-			ed++
-		}
+
 	}
 	sort.Slice(ans, func(i, j int) bool { return ans[i].Idx < ans[j].Idx })
 	log.Infof("[find prev node] index: %d, count : %v", index, ed)
 	return ans
 }
 
-func (h *RegionHistory) filter(ans []*Node) []*Node {
+func (h *RegionHistory) filter(ans []*Node, addFinal bool) []*Node {
 	h.RLock()
 	defer h.RUnlock()
 
@@ -393,7 +432,7 @@ func (h *RegionHistory) filter(ans []*Node) []*Node {
 				nodes[i].Children = append(nodes[i].Children, k)
 			}
 		}
-		if len(nodes[i].Children) == 0 && nodes[i].Timestamp != endTs {
+		if len(nodes[i].Children) == 0 && nodes[i].Timestamp != endTs && addFinal {
 			idx := len(nodes)
 			nodes = append(nodes, &Node{
 				Idx:       idx,
@@ -420,7 +459,7 @@ func (h *RegionHistory) GetRegionHistoryList(regionID uint64, start int64, end i
 	}
 	index, ok := h.latest[regionID]
 	if ok {
-		return h.filter(h.findPrevNodes(index, start, end))
+		return h.filter(h.findPrevNodes(index, start, end), false)
 	}
 
 	return nil
@@ -437,17 +476,7 @@ func (h *RegionHistory) GetKeyHistoryList(key []byte, regionID uint64, start int
 	if !ok {
 		return nil
 	}
-	ans := h.findPrevNodes(index, start, end)
 	keyStr := string(key)
-	var res []*Node
-	for _, v := range ans {
-		if v.Meta.GetStartKey() == nil || string(v.Meta.GetStartKey()) > keyStr {
-			continue
-		}
-		if v.Meta.GetEndKey() == nil || string(v.Meta.GetEndKey()) < keyStr {
-			continue
-		}
-		res = append(res, v)
-	}
-	return h.filter(res)
+	return h.filter(h.findKeyHistory(index, keyStr, start, end), false)
+
 }
