@@ -78,7 +78,7 @@ export class RawNode {
 
 namespace GraphicsConfig {
     export const nodeWidth = 25;
-    export const nodeMaxHeight = 150;
+    export const nodeMaxHeight = 1500;
     export const nodeVerticalGap = 10;
 
     export const nodeSaturation = 1;
@@ -89,10 +89,10 @@ namespace GraphicsConfig {
 }
 
 function scaleTime(interval: number): number {
-    return Math.sqrt(interval);
+    return Math.log(interval+ 2);
 }
 
-function generateNodePositions(nodes: RegionHistoryNode[], width: number, height: number) {
+export function generateNodePositions(nodes: RegionHistoryNode[], maxNodeHeight:number, width: number, height: number) {
     // Calculate X position
     let totalTime = 0;
     let timeIntervals: number[] = [0];
@@ -106,7 +106,7 @@ function generateNodePositions(nodes: RegionHistoryNode[], width: number, height
         timeIntervals.push(totalTime);
     }
 
-    let scaleX = (width - GraphicsConfig.nodeWidth) / totalTime;
+    let scaleX = (width - GraphicsConfig.nodeWidth * timeIntervals.length) / totalTime;
     nodes[0].left = 0;
     nodes[0].right = nodes[0].left + GraphicsConfig.nodeWidth;
     let timeIntervalIndex = 0;
@@ -115,7 +115,7 @@ function generateNodePositions(nodes: RegionHistoryNode[], width: number, height
         if (node.timestamp != nodes[i - 1].timestamp) {
             ++timeIntervalIndex;
         }
-        node.left = timeIntervals[timeIntervalIndex] * scaleX;
+        node.left = timeIntervals[timeIntervalIndex] * scaleX + timeIntervalIndex * GraphicsConfig.nodeWidth;
         node.right = node.left + GraphicsConfig.nodeWidth;
     }
 
@@ -159,16 +159,16 @@ function generateNodePositions(nodes: RegionHistoryNode[], width: number, height
             node.bottom = pos - GraphicsConfig.nodeVerticalGap / 2;
             // When we get to there, node.top must have already been set.
             // So truncate it's height here.
-            if (node.bottom - node.top > GraphicsConfig.nodeMaxHeight) {
+            if (node.bottom - node.top > maxNodeHeight) {
                 let middle = (node.bottom + node.top) / 2;
-                node.top = middle - GraphicsConfig.nodeMaxHeight / 2;
-                node.bottom = middle + GraphicsConfig.nodeMaxHeight / 2;
+                node.top = middle - maxNodeHeight / 2;
+                node.bottom = middle + maxNodeHeight / 2;
             }
         }
     }
 }
 
-function generateLinkPosition(nodes: RegionHistoryNode[], links: RegionHistoryLink[]) {
+export function generateLinkPosition(nodes: RegionHistoryNode[], links: RegionHistoryLink[]) {
     for (let node of nodes) {
         let nodeHeight = node.bottom - node.top;
 
@@ -192,27 +192,38 @@ function generateLinkPosition(nodes: RegionHistoryNode[], links: RegionHistoryLi
     }
 }
 
-function generateElementColor(nodes: RegionHistoryNode[], links: RegionHistoryLink[]) {
-    let differentStoresCount = 0;
-    let storeSet: any = {};
-    for (let node of nodes) {
-        if (storeSet[node.leaderStoreId] == undefined) {
-            storeSet[node.leaderStoreId] = differentStoresCount;
-            ++differentStoresCount;
+export function generateElementColor(nodes: RegionHistoryNode[], links: RegionHistoryLink[], random: boolean) {
+    if (random) {
+        for (let node of nodes) {
+            node.color = new Color(
+                Math.random() * 360,
+                GraphicsConfig.nodeSaturation,
+                GraphicsConfig.nodeLightness,
+                1
+            );
         }
-    }
-    // Avoid too hight contrast of two oppisite color
-    let colorCount = Math.max(differentStoresCount, 5);
-    for (let node of nodes) {
-        let hue = 90 + storeSet[node.leaderStoreId] * 360 / colorCount;
-        if (hue > 360)
-            hue -= 360;
-        node.color = new Color(
-            hue,
-            GraphicsConfig.nodeSaturation,
-            GraphicsConfig.nodeLightness,
-            1
-        );
+    } else {
+        let differentStoresCount = 0;
+        let storeSet: any = {};
+        for (let node of nodes) {
+            if (storeSet[node.leaderStoreId] == undefined) {
+                storeSet[node.leaderStoreId] = differentStoresCount;
+                ++differentStoresCount;
+            }
+        }
+        // Avoid too hight contrast of two oppisite color
+        let colorCount = Math.max(differentStoresCount, 5);
+        for (let node of nodes) {
+            let hue = 90 + storeSet[node.leaderStoreId] * 360 / colorCount;
+            if (hue > 360)
+                hue -= 360;
+            node.color = new Color(
+                hue,
+                GraphicsConfig.nodeSaturation,
+                GraphicsConfig.nodeLightness,
+                1
+            );
+        }
     }
 
     for (let link of links) {
@@ -231,7 +242,7 @@ function generateElementColor(nodes: RegionHistoryNode[], links: RegionHistoryLi
     }
 }
 
-export function generateFromRawNode(rawNodes: RawNode[], width: number, height: number): { nodes: RegionHistoryNode[], links: RegionHistoryLink[] } {
+export function generateFromRawNode(rawNodes: RawNode[], maxNodeHeight: number, width: number, height: number, randColor: boolean): { nodes: RegionHistoryNode[], links: RegionHistoryLink[] } {
     let nodes: RegionHistoryNode[] = [];
     let links: RegionHistoryLink[] = [];
 
@@ -283,9 +294,9 @@ export function generateFromRawNode(rawNodes: RawNode[], width: number, height: 
         nodes[link.rightIndex].leftLinkIndices.push(i);
     }
 
-    generateNodePositions(nodes, width, height);
+    generateNodePositions(nodes, maxNodeHeight, width, height);
     generateLinkPosition(nodes, links);
-    generateElementColor(nodes, links);
+    generateElementColor(nodes, links, randColor);
 
     return {
         nodes: nodes,

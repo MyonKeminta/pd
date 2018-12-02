@@ -3,7 +3,6 @@
         <div class="container">
             <div class="navbar-brand">
                 <a class="navbar-item" href="/">这是 Logo</a>
-
                 <a role="button" class="navbar-burger burger" aria-label="menu" aria-expanded="false" data-target="navbarItems">
                     <span aria-hidden="true"></span>
                     <span aria-hidden="true"></span>
@@ -16,12 +15,18 @@
                     <a class="navbar-item" @click.prevent="onAllClicked">
                         <b-icon icon="all-inclusive"></b-icon> <span>All Regions</span>
                     </a>
-                </div>
-                 <div class="navbar-item">
-                     <b-input name="navbar-input-key" width="10" v-model="key"></b-input>
-                    <a class="navbar-item" @click.prevent="onKeyClicked">
-                        <b-icon icon="all-inclusive"></b-icon> <span>Query Key</span>
-                    </a>
+                    <div class="navbar-item">
+                        <a class="navbar-item" @click.prevent="onKeyClicked">
+                            <b-icon icon="code-array"></b-icon> <span>Query Key:</span>
+                        </a>
+                        <b-input name="navbar-input-key" v-model="key" rounded></b-input>
+                    </div>
+                    <div class="navbar-item">
+                        <a class="navbar-item" @click.prevent="onRegionClicked">
+                            <b-icon icon="code-array"></b-icon> <span>Query Region:</span>
+                        </a>
+                        <b-input name="navbar-input-region" v-model="regionId" type="number" rounded></b-input>
+                    </div>
                 </div>
 
                 <div class="navbar-end">
@@ -30,7 +35,6 @@
                             <span>{{ timeIntervalString }}</span>
                             <b-icon icon="menu-down"></b-icon>
                         </a>
-
                         <b-dropdown-item custom paddingless id="time-interval-drop-down">
                             <div class="modal-card" style="width:auto">
                                 <section class="modal-card-body" id="time-interval-form-fields">
@@ -48,9 +52,7 @@
                                                 <b-timepicker rounded placeholder="Start Time" icon="clock" v-model="editedStartTime"></b-timepicker>
                                             </b-field>
                                         </div>
-
                                     </section>
-
                                     <section>
                                         <div class="field">
                                             <b-switch v-model="editedUseEndTime">Limit End Time</b-switch>
@@ -67,10 +69,29 @@
                                         </div>
                                     </section>
                                 </section>
-
                                 <footer class="modal-card-foot">
                                     <button class="button is-primary" @click="onTimeRangeOkClick">Ok</button>
                                 </footer>
+                            </div>
+                        </b-dropdown-item>
+                    </b-dropdown>
+                    <b-dropdown position="is-bottom-left">
+                        <a class="navbar-item" slot="trigger">
+                            <b-icon icon="settings"></b-icon>
+                            <b-icon icon="menu-down"></b-icon>
+                        </a>
+                        <b-dropdown-item custom paddingless id="time-interval-drop-down">
+                            <div class="modal-card" style="width:auto">
+                                <div class="field">
+                                    <section class="modal-card-body">
+                                        <div class="field">
+                                            <b-switch v-model="fullHeight">{{ fullHeight ? "Full height" : "Unified height" }}</b-switch>
+                                        </div>
+                                        <div>
+                                            <b-switch v-model="randomColor">{{ randomColor ? "Random Color" : "Color By Leader" }}</b-switch>
+                                        </div>
+                                    </section>
+                                </div>
                             </div>
                         </b-dropdown-item>
                     </b-dropdown>
@@ -81,7 +102,9 @@
 </template>
 
 <script lang="ts">
-    import { Component, Vue } from 'vue-property-decorator';
+    import { Component, Vue, Watch } from 'vue-property-decorator';
+    import { watch } from 'fs';
+
     @Component
     export default class Navbar extends Vue {
         useStartTime: boolean = false;
@@ -95,22 +118,13 @@
         editedEndTime: Date = new Date();
 
         key: string = "";
+        regionId: number = 0;
 
-        onAllClicked() {
-            this.$emit("on-all-clicked");
-        }
+        fullHeight = false;
+        randomColor = false;
 
         mounted() {
-            this.startTime.setDate(this.startTime.getDate() - 1);
-        }
-
-        onTimeRangeOkClick() {
-            this.useStartTime = this.editedUseStartTime;
-            this.startTime = this.editedStartTime;
-            this.useEndTime = this.editedUseEndTime;
-            this.endTime = this.editedEndTime;
-
-            this.$emit("on-time-range-set", this.useStartTime ? this.startTime : null, this.useEndTime ? this.endTime : null);
+            this.editedStartTime.setDate(this.editedStartTime.getDate() - 1);
         }
 
         get timeIntervalString(): string {
@@ -129,13 +143,39 @@
             }
         }
 
+        onAllClicked() {
+            this.$emit("on-all-clicked");
+        }
+
         onKeyClicked() {
             this.$emit("on-key-clicked", this.key);
+        }
+
+        onRegionClicked() {
+            this.$emit("on-region-clicked", this.regionId);
+        }
+
+        onTimeRangeOkClick() {
+            this.useStartTime = this.editedUseStartTime;
+            this.startTime = this.editedStartTime;
+            this.useEndTime = this.editedUseEndTime;
+            this.endTime = this.editedEndTime;
+
+            this.$emit("on-time-range-set", this.useStartTime ? this.startTime : null, this.useEndTime ? this.endTime : null);
+        }
+
+        @Watch('fullHeight') fullHeightChanged(n: boolean, o: boolean) {
+            this.$emit('on-settings-changed', 'fullHeight', n);
+        }
+
+        @Watch('randomColor') randomColorChanged(n: boolean, o: boolean) {
+            this.$emit('on-settings-changed', 'randomColor', n);
         }
     }
 </script>
 
 <style scoped>
+
     #time-interval-drop-down * {
         overflow: visible;
     }
