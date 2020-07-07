@@ -761,6 +761,12 @@ func (s *Server) UpdateServiceGCSafePoint(ctx context.Context, request *pdpb.Upd
 	if rc == nil {
 		return &pdpb.UpdateServiceGCSafePointResponse{Header: s.notBootstrappedHeader()}, nil
 	}
+
+	log.Info("recieved update service GC safepoint reqest",
+		zap.String("service-id", string(request.ServiceId)),
+		zap.Int64("ttl", request.TTL),
+		zap.Uint64("safePoint", request.SafePoint))
+
 	if request.TTL <= 0 {
 		if err := s.storage.RemoveServiceGCSafePoint(string(request.ServiceId)); err != nil {
 			return nil, err

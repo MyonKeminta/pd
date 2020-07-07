@@ -26,9 +26,11 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/log"
 	"github.com/pingcap/pd/v4/server/kv"
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/clientv3"
+	"go.uber.org/zap"
 )
 
 const (
@@ -447,11 +449,13 @@ func (s *Storage) LoadMinServiceGCSafePoint() (*ServiceSafePoint, error) {
 
 	min := &ServiceSafePoint{SafePoint: math.MaxUint64}
 	now := time.Now().Unix()
+	debugMsg := ""
 	for i, key := range keys {
 		ssp := &ServiceSafePoint{}
 		if err := json.Unmarshal([]byte(values[i]), ssp); err != nil {
 			return nil, err
 		}
+		debugMsg += fmt.Sprintf("%s: {%v, %v, %v}, ", key, ssp.ServiceID, ssp.ExpiredAt, ssp.SafePoint)
 		if ssp.ExpiredAt < now {
 			s.Remove(key)
 			continue
@@ -460,6 +464,7 @@ func (s *Storage) LoadMinServiceGCSafePoint() (*ServiceSafePoint, error) {
 			min = ssp
 		}
 	}
+	log.Info("load service GC safe point", zap.Uint64("min", min.SafePoint), zap.Int64("now", now), zap.String("all", debugMsg))
 
 	return min, nil
 }
