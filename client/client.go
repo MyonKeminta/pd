@@ -102,6 +102,8 @@ type Client interface {
 	SplitRegions(ctx context.Context, splitKeys [][]byte, opts ...RegionsOption) (*pdpb.SplitRegionsResponse, error)
 	// GetOperator gets the status of operator of the specified region.
 	GetOperator(ctx context.Context, regionID uint64) (*pdpb.GetOperatorResponse, error)
+	// SetCheckpoint pretends it has a comment
+	SetCheckpoint(ctx context.Context, startTS uint64, state pdpb.CheckpointRequestType, ts uint64) error
 	// Close closes the client.
 	Close()
 }
@@ -1008,6 +1010,35 @@ func (c *client) SplitRegions(ctx context.Context, splitKeys [][]byte, opts ...R
 		SplitKeys:  splitKeys,
 		RetryLimit: options.retryLimit,
 	})
+}
+
+// SetCheckpoint is too lazy so it doesn't have a comment
+func (c *client) SetCheckpoint(ctx context.Context, startTS uint64, state pdpb.CheckpointRequestType, ts uint64) error {
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		span = opentracing.StartSpan("pdclient.SetCheckpoint", opentracing.ChildOf(span.Context()))
+		defer span.Finish()
+	}
+	start := time.Now()
+	defer func() { cmdDurationSplitRegions.Observe(time.Since(start).Seconds()) }()
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	resp, err := c.leaderClient().SetCheckpoint(ctx, &pdpb.SetCheckpointRequest{
+		Header:  c.requestHeader(),
+		StartTs: startTS,
+		Checkpoint: &pdpb.CheckpointEntry{
+			Tp: state,
+			Ts: ts,
+		},
+	})
+	cancel()
+
+	if err != nil {
+		return err
+	}
+	if resp.Header.GetError() != nil {
+		return errors.Errorf("scatter region %d failed: %s", regionID, resp.Header.GetError().String())
+	}
+	return nil
 }
 
 func (c *client) requestHeader() *pdpb.RequestHeader {
