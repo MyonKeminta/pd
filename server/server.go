@@ -139,7 +139,9 @@ type Server struct {
 	closeCallbacks []func()
 
 	// serviceSafePointLock is a lock for UpdateServiceGCSafePoint
-	serviceSafePointLock sync.Mutex
+	serviceSafePointLock    sync.Mutex
+	checkpointLock          sync.Mutex
+	lastCleanCheckpointTime time.Time
 }
 
 // HandlerBuilder builds a server HTTP handler.

@@ -1053,6 +1053,37 @@ func (s *Server) GetDCLocations(ctx context.Context, request *pdpb.GetDCLocation
 	}, nil
 }
 
+// SetCheckpoint sets checkpoints for deterministic transactions
+func (s *Server) SetCheckpoint(ctx context.Context, request *pdpb.SetCheckpointRequest) (*pdpb.SetCheckpointResponse, error) {
+	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+
+	s.checkpointLock.Lock()
+	defer s.checkpointLock.Unlock()
+
+	err := s.storage.SetCheckpointForDeterministicTxn(request.StartTs, request.Checkpoint)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	if request.Checkpoint.Tp != pdpb.CheckpointRequestType_CheckpointStart && time.Since(s.lastCleanCheckpointTime) > time.Second {
+		s.lastCleanCheckpointTime = time.Now()
+		go func() {
+			s.checkpointLock.Lock()
+			err := s.storage.CleanupCheckpointForDeterministicTxn()
+			if err != nil {
+				log.Error("failed to cleanup checkpoints for deterministic txn", zap.Error(err))
+			}
+			defer s.checkpointLock.Unlock()
+		}()
+	}
+
+	return &pdpb.SetCheckpointResponse{
+		Header: s.header(),
+	}, nil
+}
+
 // validateInternalRequest checks if server is closed, which is used to validate
 // the gRPC communication between PD servers internally.
 func (s *Server) validateInternalRequest(header *pdpb.RequestHeader, onlyAllowLeader bool) error {

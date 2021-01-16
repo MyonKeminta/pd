@@ -14,6 +14,7 @@
 package core
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -27,6 +28,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/tikv/pd/pkg/encryption"
 	"github.com/tikv/pd/pkg/errs"
 	"github.com/tikv/pd/server/encryptionkm"
@@ -46,6 +48,7 @@ const (
 	customScheduleConfigPath   = "scheduler_config"
 	encryptionKeysPath         = "encryption_keys"
 	gcWorkerServiceSafePointID = "gc_worker"
+	deterministicPath          = "deterministic"
 )
 
 const (
@@ -314,6 +317,30 @@ func (s *Storage) LoadRangeByPrefix(prefix string, f func(k, v string)) error {
 	}
 }
 
+// LoadRangeByPrefixBreakable iterates all key-value pairs in the storage that has the prefix.
+func (s *Storage) LoadRangeByPrefixBreakable(prefix string, f func(k, v string) bool) error {
+	nextKey := prefix
+	endKey := clientv3.GetPrefixRangeEnd(prefix)
+outer:
+	for {
+		keys, values, err := s.LoadRange(nextKey, endKey, minKVRangeLimit)
+		if err != nil {
+			return err
+		}
+		for i := range keys {
+			toContinue := f(strings.TrimPrefix(keys[i], prefix), values[i])
+			if !toContinue {
+				break outer
+			}
+		}
+		if len(keys) < minKVRangeLimit {
+			return nil
+		}
+		nextKey = keys[len(keys)-1] + "\x00"
+	}
+	return nil
+}
+
 // SaveReplicationStatus stores replication status by mode.
 func (s *Storage) SaveReplicationStatus(mode string, status interface{}) error {
 	value, err := json.Marshal(status)
@@ -542,6 +569,109 @@ func (s *Storage) LoadMinServiceGCSafePoint(now time.Time) (*ServiceSafePoint, e
 	}
 
 	return min, nil
+}
+
+func checkpointKey(startTS uint64) string {
+	return path.Join(deterministicPath, "checkpoints", fmt.Sprintf("%016x", startTS))
+}
+
+func marshalCheckpoint(checkpoint *pdpb.CheckpointEntry) (string, error) {
+	bytes, err := checkpoint.Marshal()
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func unmarshalCheckpoint(str string) (*pdpb.CheckpointEntry, error) {
+	bytes, err := hex.DecodeString(str)
+	if err != nil {
+		return nil, err
+	}
+	c := &pdpb.CheckpointEntry{}
+	err = c.Unmarshal(bytes)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// SetCheckpointForDeterministicTxn pretends it has a comment
+func (s *Storage) SetCheckpointForDeterministicTxn(startTS uint64, checkpoint *pdpb.CheckpointEntry) error {
+	key := checkpointKey(startTS)
+	c, err := s.Load(key)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	var oldCheckpoint *pdpb.CheckpointEntry
+	if len(c) != 0 {
+		oldCheckpoint, err = unmarshalCheckpoint(c)
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
+
+	switch checkpoint.Tp {
+	case pdpb.CheckpointRequestType_CheckpointStart:
+		if oldCheckpoint != nil {
+			if oldCheckpoint.Tp != pdpb.CheckpointRequestType_CheckpointStart {
+				return errors.Errorf("stale set checkpoint request, trying to write: %v, already exist: %v", checkpoint, oldCheckpoint)
+			}
+			if oldCheckpoint.Ts != checkpoint.Ts {
+				return errors.Errorf("unexpected error: mismatch checkpoint ts, trying to write: %v, already exist: %v", checkpoint, oldCheckpoint)
+			}
+			return nil
+		}
+	case pdpb.CheckpointRequestType_CheckpointCommit:
+		fallthrough
+	case pdpb.CheckpointRequestType_CheckpointRollback:
+		if oldCheckpoint == nil {
+			return errors.Errorf("missing checkpoint start when trying to write checkpoint commit: %v", oldCheckpoint)
+		}
+		if oldCheckpoint.Tp == checkpoint.Tp {
+			return nil
+		}
+		if oldCheckpoint.Tp != pdpb.CheckpointRequestType_CheckpointStart {
+			return errors.Errorf("trying commit checkpoint in mismatch state, trying to write: %v, current: %v", checkpoint, oldCheckpoint)
+		}
+	}
+
+	str, err := marshalCheckpoint(checkpoint)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	err = s.Save(key, str)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	return nil
+}
+
+// CleanupCheckpointForDeterministicTxn pretends it has a comment
+func (s *Storage) CleanupCheckpointForDeterministicTxn() error {
+	err := s.LoadRangeByPrefixBreakable(path.Join(deterministicPath, "checkpoints"), func(k, v string) bool {
+		checkpoint, err := unmarshalCheckpoint(v)
+		if err != nil {
+			return false
+		}
+		if checkpoint.Tp == pdpb.CheckpointRequestType_CheckpointCommit {
+			// Ignore the error
+			_ = s.Remove(k)
+			return true
+		}
+		if checkpoint.Tp == pdpb.CheckpointRequestType_CheckpointRollback {
+			// Keep it and continue cleanup following checkpoints
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	return nil
 }
 
 // GetAllServiceGCSafePoints returns all services GC safepoints
