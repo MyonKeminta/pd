@@ -1036,7 +1036,7 @@ func (c *client) SetCheckpoint(ctx context.Context, startTS uint64, state pdpb.C
 		return err
 	}
 	if resp.Header.GetError() != nil {
-		return errors.Errorf("scatter region %d failed: %s", regionID, resp.Header.GetError().String())
+		return errors.Errorf("set checkpoint failed, startTS: %v; checkpoint: {%s, %v}; err: %s", startTS, state, ts, resp.Header.GetError().String())
 	}
 	return nil
 }
