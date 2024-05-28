@@ -355,13 +355,13 @@ type tsoConnectionContext struct {
 
 // updateConnectionCtxs will choose the proper way to update the connections for the given dc-location.
 // It will return a bool to indicate whether the update is successful.
-func (c *tsoClient) updateConnectionCtxs(ctx context.Context, dc string, connectionCtxs *sync.Map) bool {
+func (c *tsoClient) updateConnectionCtxs(ctx context.Context, dc string, connectionCtxs *sync.Map, onRecvCallback tsoStreamOnRecvCallback) bool {
 	// Normal connection creating, it will be affected by the `enableForwarding`.
 	createTSOConnection := c.tryConnectToTSO
 	if c.allowTSOFollowerProxy(dc) {
 		createTSOConnection = c.tryConnectToTSOWithProxy
 	}
-	if err := createTSOConnection(ctx, dc, connectionCtxs); err != nil {
+	if err := createTSOConnection(ctx, dc, connectionCtxs, onRecvCallback); err != nil {
 		log.Error("[tso] update connection contexts failed", zap.String("dc", dc), errs.ZapError(err))
 		return false
 	}
@@ -376,6 +376,7 @@ func (c *tsoClient) tryConnectToTSO(
 	ctx context.Context,
 	dc string,
 	connectionCtxs *sync.Map,
+	onRecvCallback tsoStreamOnRecvCallback,
 ) error {
 	var (
 		networkErrNum  uint64
@@ -408,7 +409,7 @@ func (c *tsoClient) tryConnectToTSO(
 		}
 		if cc != nil {
 			cctx, cancel := context.WithCancel(ctx)
-			stream, err = c.tsoStreamBuilderFactory.makeBuilder(cc).build(cctx, cancel, c.option.timeout)
+			stream, err = c.tsoStreamBuilderFactory.makeBuilder(cc).build(cctx, cancel, c.option.timeout, onRecvCallback)
 			failpoint.Inject("unreachableNetwork", func() {
 				stream = nil
 				err = status.New(codes.Unavailable, "unavailable").Err()
@@ -452,12 +453,12 @@ func (c *tsoClient) tryConnectToTSO(
 			// create the follower stream
 			cctx, cancel := context.WithCancel(ctx)
 			cctx = grpcutil.BuildForwardContext(cctx, forwardedHost)
-			stream, err = c.tsoStreamBuilderFactory.makeBuilder(backupClientConn).build(cctx, cancel, c.option.timeout)
+			stream, err = c.tsoStreamBuilderFactory.makeBuilder(backupClientConn).build(cctx, cancel, c.option.timeout, onRecvCallback)
 			if err == nil {
 				forwardedHostTrim := trimHTTPPrefix(forwardedHost)
 				addr := trimHTTPPrefix(backupURL)
 				// the goroutine is used to check the network and change back to the original stream
-				go c.checkAllocator(ctx, cancel, dc, forwardedHostTrim, addr, url, updateAndClear)
+				go c.checkAllocator(ctx, cancel, dc, forwardedHostTrim, addr, url, updateAndClear, onRecvCallback)
 				requestForwarded.WithLabelValues(forwardedHostTrim, addr).Set(1)
 				updateAndClear(backupURL, &tsoConnectionContext{cctx, cancel, backupURL, stream})
 				return nil
@@ -473,6 +474,7 @@ func (c *tsoClient) checkAllocator(
 	forwardCancel context.CancelFunc,
 	dc, forwardedHostTrim, addr, url string,
 	updateAndClear func(newAddr string, connectionCtx *tsoConnectionContext),
+	onRecvCallback tsoStreamOnRecvCallback,
 ) {
 	defer func() {
 		// cancel the forward stream
@@ -502,7 +504,7 @@ func (c *tsoClient) checkAllocator(
 			if err == nil && resp.GetStatus() == healthpb.HealthCheckResponse_SERVING {
 				// create a stream of the original allocator
 				cctx, cancel := context.WithCancel(ctx)
-				stream, err := c.tsoStreamBuilderFactory.makeBuilder(cc).build(cctx, cancel, c.option.timeout)
+				stream, err := c.tsoStreamBuilderFactory.makeBuilder(cc).build(cctx, cancel, c.option.timeout, onRecvCallback)
 				if err == nil && stream != nil {
 					log.Info("[tso] recover the original tso stream since the network has become normal", zap.String("dc", dc), zap.String("url", url))
 					updateAndClear(url, &tsoConnectionContext{cctx, cancel, url, stream})
@@ -527,6 +529,7 @@ func (c *tsoClient) tryConnectToTSOWithProxy(
 	ctx context.Context,
 	dc string,
 	connectionCtxs *sync.Map,
+	onRecvCallback tsoStreamOnRecvCallback,
 ) error {
 	tsoStreamBuilders := c.getAllTSOStreamBuilders()
 	leaderAddr := c.svcDiscovery.GetServingURL()
@@ -561,7 +564,7 @@ func (c *tsoClient) tryConnectToTSOWithProxy(
 			cctx = grpcutil.BuildForwardContext(cctx, forwardedHost)
 		}
 		// Create the TSO stream.
-		stream, err := tsoStreamBuilder.build(cctx, cancel, c.option.timeout)
+		stream, err := tsoStreamBuilder.build(cctx, cancel, c.option.timeout, onRecvCallback)
 		if err == nil {
 			if addr != leaderAddr {
 				forwardedHostTrim := trimHTTPPrefix(forwardedHost)

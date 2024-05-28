@@ -46,6 +46,9 @@ var (
 	tsoBatchSize        prometheus.Histogram
 	tsoBatchSendLatency prometheus.Histogram
 	requestForwarded    *prometheus.GaugeVec
+
+	estimateTSOLatencyGauge   *prometheus.GaugeVec
+	onTheFlyRequestCountGauge *prometheus.GaugeVec
 )
 
 func initMetrics(constLabels prometheus.Labels) {
@@ -117,6 +120,24 @@ func initMetrics(constLabels prometheus.Labels) {
 			Help:        "The status to indicate if the request is forwarded",
 			ConstLabels: constLabels,
 		}, []string{"host", "delegate"})
+
+	estimateTSOLatencyGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   "pd_client",
+			Subsystem:   "request",
+			Name:        "estimate_tso_latency",
+			Help:        "Estimated latency of an RTT of getting TSO",
+			ConstLabels: constLabels,
+		}, []string{"dispatcher", "conn"})
+
+	onTheFlyRequestCountGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   "pd_client",
+			Subsystem:   "request",
+			Name:        "on_the_fly_requests_count",
+			Help:        "Current count of on-the-fly batch tso requests",
+			ConstLabels: constLabels,
+		}, []string{"stream"})
 }
 
 var (
@@ -218,4 +239,6 @@ func registerMetrics() {
 	prometheus.MustRegister(tsoBatchSize)
 	prometheus.MustRegister(tsoBatchSendLatency)
 	prometheus.MustRegister(requestForwarded)
+	prometheus.MustRegister(estimateTSOLatencyGauge)
+	prometheus.MustRegister(onTheFlyRequestCountGauge)
 }

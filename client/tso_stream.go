@@ -16,13 +16,20 @@ package pd
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"math"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/kvproto/pkg/tsopb"
+	"github.com/pingcap/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tikv/pd/client/errs"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -47,7 +54,7 @@ func (*tsoTSOStreamBuilderFactory) makeBuilder(cc *grpc.ClientConn) tsoStreamBui
 // TSO Stream Builder
 
 type tsoStreamBuilder interface {
-	build(context.Context, context.CancelFunc, time.Duration) (*tsoStream, error)
+	build(context.Context, context.CancelFunc, time.Duration, tsoStreamOnRecvCallback) (*tsoStream, error)
 }
 
 type pdTSOStreamBuilder struct {
@@ -55,14 +62,14 @@ type pdTSOStreamBuilder struct {
 	client    pdpb.PDClient
 }
 
-func (b *pdTSOStreamBuilder) build(ctx context.Context, cancel context.CancelFunc, timeout time.Duration) (*tsoStream, error) {
+func (b *pdTSOStreamBuilder) build(ctx context.Context, cancel context.CancelFunc, timeout time.Duration, onRecvCallback tsoStreamOnRecvCallback) (*tsoStream, error) {
 	done := make(chan struct{})
 	// TODO: we need to handle a conner case that this goroutine is timeout while the stream is successfully created.
 	go checkStreamTimeout(ctx, cancel, done, timeout)
 	stream, err := b.client.Tso(ctx)
 	done <- struct{}{}
 	if err == nil {
-		return &tsoStream{stream: pdTSOStreamAdapter{stream}, serverURL: b.serverURL}, nil
+		return newTSOStream(b.serverURL, pdTSOStreamAdapter{stream}, onRecvCallback), nil
 	}
 	return nil, err
 }
@@ -73,7 +80,7 @@ type tsoTSOStreamBuilder struct {
 }
 
 func (b *tsoTSOStreamBuilder) build(
-	ctx context.Context, cancel context.CancelFunc, timeout time.Duration,
+	ctx context.Context, cancel context.CancelFunc, timeout time.Duration, onRecvCallback tsoStreamOnRecvCallback,
 ) (*tsoStream, error) {
 	done := make(chan struct{})
 	// TODO: we need to handle a conner case that this goroutine is timeout while the stream is successfully created.
@@ -81,7 +88,7 @@ func (b *tsoTSOStreamBuilder) build(
 	stream, err := b.client.Tso(ctx)
 	done <- struct{}{}
 	if err == nil {
-		return &tsoStream{stream: tsoTSOStreamAdapter{stream}, serverURL: b.serverURL}, nil
+		return newTSOStream(b.serverURL, tsoTSOStreamAdapter{stream}, onRecvCallback), nil
 	}
 	return nil, err
 }
@@ -110,6 +117,7 @@ type grpcTSOStreamAdapter interface {
 	Send(clusterID uint64, keyspaceID, keyspaceGroupID uint32, dcLocation string,
 		count int64) error
 	Recv() (tsoRequestResult, error)
+	CloseSend() error
 }
 
 type pdTSOStreamAdapter struct {
@@ -139,6 +147,10 @@ func (s pdTSOStreamAdapter) Recv() (tsoRequestResult, error) {
 		suffixBits:          resp.GetTimestamp().GetSuffixBits(),
 		respKeyspaceGroupID: defaultKeySpaceGroupID,
 	}, nil
+}
+
+func (s pdTSOStreamAdapter) CloseSend() error {
+	return s.stream.CloseSend()
 }
 
 type tsoTSOStreamAdapter struct {
@@ -172,6 +184,10 @@ func (s tsoTSOStreamAdapter) Recv() (tsoRequestResult, error) {
 	}, nil
 }
 
+func (s tsoTSOStreamAdapter) CloseSend() error {
+	return s.stream.CloseSend()
+}
+
 //// TSO Stream
 //
 //type tsoStream interface {
@@ -189,48 +205,274 @@ func (s tsoTSOStreamAdapter) Recv() (tsoRequestResult, error) {
 //	Close()
 //}
 
+type batchedReq struct {
+	dispatcherID string
+	reqID        uint64
+	startTime    time.Time
+}
+
+type tsoStreamOnRecvCallback = func(reqID uint64, res tsoRequestResult, err error)
+
+var streamIDAlloc atomic.Int32
+
 type tsoStream struct {
 	serverURL string
 	stream    grpcTSOStreamAdapter
+
+	// Not thread-safe. Assuming that `processRequests` will never be called concurrently.
+	reqSeq         int64
+	pendingReqIDs  NonblockingSPSC[batchedReq]
+	onRecvCallback tsoStreamOnRecvCallback
+
+	estimateLatencyMicros atomic.Uint64
+
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	onTheFlyRequestCountGauge prometheus.Gauge
+
+	onTheFlyRequests atomic.Int32
+}
+
+func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback tsoStreamOnRecvCallback) *tsoStream {
+	streamID := fmt.Sprintf("%d", streamIDAlloc.Add(1))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &tsoStream{
+		serverURL: serverURL,
+		stream:    stream,
+
+		pendingReqIDs:  NewNonblockingSPSC[batchedReq](64),
+		onRecvCallback: onRecvCallback,
+
+		cancel: cancel,
+
+		onTheFlyRequestCountGauge: onTheFlyRequestCountGauge.WithLabelValues(streamID),
+	}
+	s.wg.Add(1)
+	go s.recvLoop(ctx)
+	return s
 }
 
 func (s *tsoStream) getServerURL() string {
 	return s.serverURL
 }
 
-func (s *tsoStream) processRequests(
+func (s *tsoStream) processRequests(reqID uint64,
 	clusterID uint64, keyspaceID, keyspaceGroupID uint32, dcLocation string, count int64, batchStartTime time.Time,
-) (respKeyspaceGroupID uint32, physical, logical int64, suffixBits uint32, err error) {
-	start := time.Now()
-	if err = s.stream.Send(clusterID, keyspaceID, keyspaceGroupID, dcLocation, count); err != nil {
+) error {
+	s.pendingReqIDs.Push(batchedReq{
+		reqID:     reqID,
+		startTime: time.Now(),
+	})
+
+	if err := s.stream.Send(clusterID, keyspaceID, keyspaceGroupID, dcLocation, count); err != nil {
 		if err == io.EOF {
 			err = errs.ErrClientTSOStreamClosed
 		} else {
 			err = errors.WithStack(err)
 		}
-		return
+		return err
 	}
 	tsoBatchSendLatency.Observe(float64(time.Since(batchStartTime)))
-	res, err := s.stream.Recv()
-	if err != nil {
-		if err == io.EOF {
-			err = errs.ErrClientTSOStreamClosed
-		} else {
-			err = errors.WithStack(err)
+
+	s.onTheFlyRequestCountGauge.Set(float64(s.onTheFlyRequests.Add(1)))
+
+	// TODO: handle broken stream: ensure all request are responded with error when the broken is broken with error.
+
+	return nil
+
+	//res, err := s.stream.Recv()
+	//if err != nil {
+	//	if err == io.EOF {
+	//		err = errs.ErrClientTSOStreamClosed
+	//	} else {
+	//		err = errors.WithStack(err)
+	//	}
+	//	return
+	//}
+	//requestDurationTSO.Observe(time.Since(start).Seconds())
+	//tsoBatchSize.Observe(float64(count))
+
+	//if res.count != uint32(count) {
+	//	err = errors.WithStack(errTSOLength)
+	//	return
+	//}
+
+	//return
+}
+
+func (s *tsoStream) recvLoop(ctx context.Context) {
+	defer func() {
+		s.cancel()
+		s.wg.Done()
+		s.onTheFlyRequests.Store(0)
+		s.onTheFlyRequestCountGauge.Set(0)
+	}()
+
+	var finishWithErr error
+
+	const (
+		initialEstimateTSOLatencyMicros float64 = 2000
+
+		// Constants used in the simple RC low-pass filter
+		filterCutoffFreq float64 = 1.0
+		filterRC                 = 1.0 / (2.0 * math.Pi * filterCutoffFreq)
+	)
+
+	// A fake very-faraway value
+	lastReceiveTime := time.Now().Add(-time.Hour * 10)
+	estimatedLatency := float64(initialEstimateTSOLatencyMicros)
+
+	updateEstimateLatency := func(now time.Time, latency time.Duration) {
+		if latency < 0 {
+			// Unreachable
+			return
 		}
-		return
+		// Delta time
+		dt := now.Sub(lastReceiveTime).Seconds()
+		// Current sample represented and calculated in microseconds
+		currentSample := float64(latency.Microseconds())
+		alpha := dt / (filterRC + dt)
+		estimatedLatency = (1-alpha)*estimatedLatency + alpha*currentSample
+		s.estimateLatencyMicros.Store(uint64(estimatedLatency))
 	}
-	requestDurationTSO.Observe(time.Since(start).Seconds())
-	tsoBatchSize.Observe(float64(count))
 
-	if res.count != uint32(count) {
-		err = errors.WithStack(errTSOLength)
-		return
+recvLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			finishWithErr = context.Canceled
+			break recvLoop
+		default:
+		}
+
+		res, err := s.stream.Recv()
+
+		if err != nil {
+			if err == io.EOF {
+				finishWithErr = errs.ErrClientTSOStreamClosed
+			} else {
+				finishWithErr = errors.WithStack(err)
+			}
+			break
+		}
+		req, ok := s.pendingReqIDs.Pop()
+		if !ok {
+			finishWithErr = errors.New("tsoStream timing order broken")
+			break
+		}
+
+		now := time.Now()
+		latency := now.Sub(req.startTime)
+
+		requestDurationTSO.Observe(latency.Seconds())
+		tsoBatchSize.Observe(float64(res.count))
+
+		updateEstimateLatency(now, latency)
+
+		// TODO: Check request and result have matching count.
+
+		s.onRecvCallback(req.reqID, res, nil)
+		s.onTheFlyRequestCountGauge.Set(float64(s.onTheFlyRequests.Add(-1)))
 	}
 
-	respKeyspaceGroupID = res.respKeyspaceGroupID
-	physical, logical, suffixBits = res.physical, res.logical, res.suffixBits
-	return
+	if finishWithErr == nil {
+		panic("unreachable")
+	}
+
+	log.Info("tsoStream.recvLoop ended", zap.Error(finishWithErr))
+
+	// TODO: Consider concurrent pushing causing some requests left in the queue.
+	for {
+		req, ok := s.pendingReqIDs.Pop()
+		if !ok {
+			break
+		}
+		s.onRecvCallback(req.reqID, tsoRequestResult{}, finishWithErr)
+	}
+}
+
+func (s *tsoStream) EstimatedRoundTripLatency() time.Duration {
+	latencyUs := s.estimateLatencyMicros.Load()
+	// Limit it at least 100us
+	if latencyUs < 100 {
+		latencyUs = 100
+	}
+	return time.Microsecond * time.Duration(latencyUs)
+}
+
+func (s *tsoStream) Close() {
+	s.cancel()
+	s.wg.Wait()
+}
+
+type NonblockingSPSC[T any] struct {
+	buffer       []T
+	capacity     int64
+	capacityMask int64
+	head         atomic.Int64
+	tail         atomic.Int64
+}
+
+func NewNonblockingSPSC[T any](capacity int) NonblockingSPSC[T] {
+	capacity = int(roundToPowerOf2(int64(capacity)))
+	if capacity <= 0 {
+		panic("invalid capacity for NonblockingSPSC")
+	}
+	return NonblockingSPSC[T]{
+		buffer:       make([]T, capacity),
+		capacity:     int64(capacity),
+		capacityMask: int64(capacity - 1),
+	}
+}
+
+func roundToPowerOf2(v int64) int64 {
+	if v&(v-1) == 0 {
+		return v
+	}
+	// Duplicate bits
+	v |= v >> 1
+	v |= v >> 2
+	v |= v >> 4
+	v |= v >> 8
+	v |= v >> 16
+	v |= v >> 32
+	// Plus 1 to carry to next bit
+	v += 1
+	return v
+}
+
+func (q *NonblockingSPSC[T]) Push(v T) bool {
+	tail := q.tail.Load()
+	head := q.head.Load()
+	if tail-head >= q.capacity {
+		return false
+	}
+
+	q.buffer[tail&q.capacityMask] = v
+	if !q.tail.CompareAndSwap(tail, tail+1) {
+		panic("race on NonblockingSPSC.Push. did you push concurrently?")
+	}
+	return true
+}
+
+func (q *NonblockingSPSC[T]) Pop() (T, bool) {
+	head := q.head.Load()
+	tail := q.tail.Load()
+	if head >= tail {
+		var empty T
+		return empty, false
+	}
+	index := head & q.capacityMask
+	res := q.buffer[index]
+	// Clear to avoid leak in case the type T is referencing some other data.
+	var empty T
+	q.buffer[index] = empty
+	if !q.tail.CompareAndSwap(head, head+1) {
+		panic("race on NonblockingSPSC.Push. did you pop concurrently?")
+	}
+	return res, true
 }
 
 //
