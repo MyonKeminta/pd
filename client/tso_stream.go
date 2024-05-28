@@ -469,7 +469,7 @@ func (q *NonblockingSPSC[T]) Pop() (T, bool) {
 	// Clear to avoid leak in case the type T is referencing some other data.
 	var empty T
 	q.buffer[index] = empty
-	if !q.tail.CompareAndSwap(head, head+1) {
+	if !q.head.CompareAndSwap(head, head+1) {
 		panic("race on NonblockingSPSC.Push. did you pop concurrently?")
 	}
 	return res, true
