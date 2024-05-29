@@ -199,7 +199,9 @@ func (td *tsoDispatcher) handleDispatcher(wg *sync.WaitGroup) {
 			return true
 		})
 		// Clear the tso batch controller.
-		batchController.clear()
+		if batchController != nil {
+			batchController.clear()
+		}
 		tsoErr := errors.WithStack(errClosing)
 		td.revokePendingRequests(tsoErr)
 		wg.Done()
