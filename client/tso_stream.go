@@ -322,7 +322,7 @@ func (s *tsoStream) recvLoop(ctx context.Context) {
 
 	// A fake very-faraway value
 	lastReceiveTime := time.Now().Add(-time.Hour * 10)
-	estimatedLatency := float64(initialEstimateTSOLatencyMicros)
+	logEstimatedLatency := math.Log(initialEstimateTSOLatencyMicros)
 
 	updateEstimateLatency := func(now time.Time, latency time.Duration) {
 		if latency < 0 {
@@ -331,11 +331,11 @@ func (s *tsoStream) recvLoop(ctx context.Context) {
 		}
 		// Delta time
 		dt := now.Sub(lastReceiveTime).Seconds()
-		// Current sample represented and calculated in microseconds
-		currentSample := float64(latency.Microseconds())
+		// Current sample represented and calculated in log(microseconds)
+		currentSample := math.Log(float64(latency.Microseconds()))
 		alpha := dt / (filterRC + dt)
-		estimatedLatency = (1-alpha)*estimatedLatency + alpha*currentSample
-		s.estimateLatencyMicros.Store(uint64(estimatedLatency))
+		logEstimatedLatency = (1-alpha)*logEstimatedLatency + alpha*currentSample
+		s.estimateLatencyMicros.Store(uint64(math.Exp(logEstimatedLatency)))
 	}
 
 recvLoop:
