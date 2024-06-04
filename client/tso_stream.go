@@ -205,6 +205,11 @@ func (s tsoTSOStreamAdapter) CloseSend() error {
 //	Close()
 //}
 
+var (
+	TSOStreamInjectDelay time.Duration = 0
+	FilterCutoffFreq     float64       = 1.0
+)
+
 type batchedReq struct {
 	dispatcherID string
 	reqID        uint64
@@ -314,11 +319,8 @@ func (s *tsoStream) recvLoop(ctx context.Context) {
 
 	const (
 		initialEstimateTSOLatencyMicros float64 = 2000
-
-		// Constants used in the simple RC low-pass filter
-		filterCutoffFreq float64 = 1.0
-		filterRC                 = 1.0 / (2.0 * math.Pi * filterCutoffFreq)
 	)
+	filterRC := 1.0 / (2.0 * math.Pi * FilterCutoffFreq)
 
 	// A fake very-faraway value
 	lastReceiveTime := time.Now().Add(-time.Hour * 10)
@@ -364,6 +366,15 @@ recvLoop:
 		}
 
 		now := time.Now()
+
+		if TSOStreamInjectDelay > 0 {
+			deadline := req.startTime.Add(TSOStreamInjectDelay)
+			if deadline.After(now) {
+				time.Sleep(deadline.Sub(now))
+			}
+			now = time.Now()
+		}
+
 		latency := now.Sub(req.startTime)
 
 		requestDurationTSO.Observe(latency.Seconds())
