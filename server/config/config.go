@@ -96,6 +96,8 @@ type Config struct {
 	// be automatically clamped to the range.
 	TSOUpdatePhysicalInterval typeutil.Duration `toml:"tso-update-physical-interval" json:"tso-update-physical-interval"`
 
+	TSODelayInjection typeutil.Duration `toml:"tso-delay-injection" json:"tso-delay-injection"`
+
 	// EnableLocalTSO is used to enable the Local TSO Allocator feature,
 	// which allows the PD server to generate Local TSO for certain DC-level transactions.
 	// To make this feature meaningful, user has to set the "zone" label for the PD server

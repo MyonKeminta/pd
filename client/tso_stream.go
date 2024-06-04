@@ -206,8 +206,8 @@ func (s tsoTSOStreamAdapter) CloseSend() error {
 //}
 
 var (
-	TSOStreamInjectDelay time.Duration = 0
-	FilterCutoffFreq     float64       = 1.0
+	//TSOStreamInjectDelay time.Duration = 0
+	FilterCutoffFreq float64 = 1.0
 )
 
 type batchedReq struct {
@@ -367,13 +367,13 @@ recvLoop:
 
 		now := time.Now()
 
-		if TSOStreamInjectDelay > 0 {
-			deadline := req.startTime.Add(TSOStreamInjectDelay)
-			if deadline.After(now) {
-				time.Sleep(deadline.Sub(now))
-			}
-			now = time.Now()
-		}
+		//if TSOStreamInjectDelay > 0 {
+		//	deadline := req.startTime.Add(TSOStreamInjectDelay)
+		//	if deadline.After(now) {
+		//		time.Sleep(deadline.Sub(now))
+		//	}
+		//	now = time.Now()
+		//}
 
 		latency := now.Sub(req.startTime)
 

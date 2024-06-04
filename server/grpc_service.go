@@ -530,12 +530,52 @@ func (s *GrpcServer) Tso(stream pdpb.PD_TsoServer) error {
 	)
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+
+	type respAndTime struct {
+		startTime time.Time
+		resp      *pdpb.TsoResponse
+	}
+
+	delayInjection := s.GetConfig().TSODelayInjection.Duration
+
+	respCh := make(chan respAndTime, 1000)
+	respErrCh := make(chan error, 2)
+
+	if delayInjection > 0 {
+		defer cancel()
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case r := <-respCh:
+					now := time.Now()
+					deadline := r.startTime.Add(delayInjection)
+					if deadline.After(now) {
+						time.Sleep(deadline.Sub(now))
+					}
+					if err := stream.Send(r.resp); err != nil {
+						respErrCh <- errors.WithStack(err)
+						return
+					}
+				}
+			}
+		}()
+	}
+
 	for {
 		// Prevent unnecessary performance overhead of the channel.
 		if errCh != nil {
 			select {
 			case err := <-errCh:
 				return errors.WithStack(err)
+			default:
+			}
+		}
+		if delayInjection > 0 {
+			select {
+			case err := <-respErrCh:
+				return err
 			default:
 			}
 		}
@@ -587,8 +627,15 @@ func (s *GrpcServer) Tso(stream pdpb.PD_TsoServer) error {
 			Timestamp: &ts,
 			Count:     count,
 		}
-		if err := stream.Send(response); err != nil {
-			return errors.WithStack(err)
+		if delayInjection > 0 {
+			respCh <- respAndTime{
+				startTime: start,
+				resp:      response,
+			}
+		} else {
+			if err := stream.Send(response); err != nil {
+				return errors.WithStack(err)
+			}
 		}
 	}
 }
