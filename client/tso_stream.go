@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -223,6 +224,7 @@ var streamIDAlloc atomic.Int32
 type tsoStream struct {
 	serverURL string
 	stream    grpcTSOStreamAdapter
+	streamID  string
 
 	// Not thread-safe. Assuming that `processRequests` will never be called concurrently.
 	reqSeq         int64
@@ -235,8 +237,13 @@ type tsoStream struct {
 	wg     sync.WaitGroup
 
 	onTheFlyRequestCountGauge prometheus.Gauge
+	onTheFlyRequests          atomic.Int32
 
-	onTheFlyRequests atomic.Int32
+	latencyHistogram            *histogram
+	latencyHistogramDumping     *histogram
+	latencyHistogramAccumulated *histogram
+	latencyHistogramDumpWorking atomic.Bool
+	lastDumpHistogramTime       time.Time
 }
 
 func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback tsoStreamOnRecvCallback) *tsoStream {
@@ -246,6 +253,7 @@ func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback 
 	s := &tsoStream{
 		serverURL: serverURL,
 		stream:    stream,
+		streamID:  streamID,
 
 		pendingReqIDs:  NewNonblockingSPSC[batchedReq](64),
 		onRecvCallback: onRecvCallback,
@@ -253,6 +261,11 @@ func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback 
 		cancel: cancel,
 
 		onTheFlyRequestCountGauge: onTheFlyRequestCountGauge.WithLabelValues(streamID),
+
+		latencyHistogram:            newHistogram(2e-5, 2000, 1),
+		latencyHistogramDumping:     newHistogram(2e-5, 2000, 1),
+		latencyHistogramAccumulated: newHistogram(2e-5, 2000, 1),
+		lastDumpHistogramTime:       time.Now(),
 	}
 	s.wg.Add(1)
 	go s.recvLoop(ctx)
@@ -386,6 +399,13 @@ recvLoop:
 
 		s.onRecvCallback(req.reqID, res, nil)
 		s.onTheFlyRequestCountGauge.Set(float64(s.onTheFlyRequests.Add(-1)))
+		s.latencyHistogram.observe(latency.Seconds())
+		if now.Sub(s.lastDumpHistogramTime) >= time.Minute && !s.latencyHistogramDumpWorking.Load() {
+			s.latencyHistogramDumpWorking.Store(true)
+			s.latencyHistogram, s.latencyHistogramDumping = s.latencyHistogramDumping, s.latencyHistogram
+			s.lastDumpHistogramTime = now
+			go s.dumpLatencyHistogram(now)
+		}
 	}
 
 	if finishWithErr == nil {
@@ -402,6 +422,23 @@ recvLoop:
 		}
 		s.onRecvCallback(req.reqID, tsoRequestResult{}, finishWithErr)
 	}
+}
+
+func (s *tsoStream) dumpLatencyHistogram(now time.Time) {
+	defer s.latencyHistogramDumpWorking.Store(false)
+
+	s.latencyHistogramAccumulated.sum += s.latencyHistogramDumping.sum
+	s.latencyHistogramAccumulated.count += s.latencyHistogramDumping.count
+	for i := 0; i < len(s.latencyHistogramAccumulated.buckets) && i < len(s.latencyHistogramDumping.buckets); i++ {
+		s.latencyHistogramAccumulated.buckets[i] += s.latencyHistogramDumping.buckets[i]
+	}
+	if len(s.latencyHistogramDumping.buckets) > len(s.latencyHistogramAccumulated.buckets) {
+		s.latencyHistogramAccumulated.buckets = append(s.latencyHistogramAccumulated.buckets, s.latencyHistogramDumping.buckets[len(s.latencyHistogramAccumulated.buckets):]...)
+	}
+
+	log.Info("tso.Stream dumping accumulated latency histogram", zap.String("streamID", s.streamID), zap.Time("time", now), zap.Stringer("histogram", s.latencyHistogramAccumulated))
+
+	s.latencyHistogramDumping.clear()
 }
 
 func (s *tsoStream) EstimatedRoundTripLatency() time.Duration {
@@ -595,3 +632,109 @@ func (q *NonblockingSPSC[T]) Pop() (T, bool) {
 //	physical, logical, suffixBits = ts.GetPhysical(), ts.GetLogical(), ts.GetSuffixBits()
 //	return
 //}
+
+type histogram struct {
+	buckets   []int
+	sum       float64
+	sumSquare float64
+	count     int
+	interval  float64
+	cutoff    float64
+}
+
+func newHistogram(interval float64, bucketsCount int, cutoff float64) *histogram {
+	return &histogram{
+		buckets:  make([]int, bucketsCount),
+		interval: interval,
+		count:    0,
+		cutoff:   cutoff,
+	}
+}
+
+func (h *histogram) observe(value float64) {
+	if value >= h.cutoff {
+		return
+	}
+
+	index := int(value / h.interval)
+	for index >= len(h.buckets) {
+		h.buckets = append(h.buckets, 0)
+	}
+
+	h.buckets[index]++
+	h.count++
+	h.sum += value
+	h.sumSquare += value * value
+}
+
+func (h *histogram) getPercentile(p float64) float64 {
+	if h.count == 0 {
+		return 0
+	}
+	limit := float64(h.count) * p
+	result := 0.
+	for i := 0; i < len(h.buckets); i += 1 {
+		samplesInBucket := float64(h.buckets[i])
+		if samplesInBucket >= limit {
+			result += limit / samplesInBucket * h.interval
+			break
+		}
+		result += h.interval
+		limit -= samplesInBucket
+	}
+	return result
+}
+
+func (h *histogram) getAvg() float64 {
+	return h.sum / float64(h.count)
+}
+
+func (h *histogram) String() string {
+	sb := &strings.Builder{}
+	_, err := fmt.Fprintf(sb, "{ count: %v, sum: %v, sum_square: %v, interval: %v, buckets.len: %v, buckets: [", h.count, h.sum, h.sumSquare, h.interval, len(h.buckets))
+	if err != nil {
+		panic("unreachable")
+	}
+
+	if len(h.buckets) > 0 {
+		put := func(value, count int) {
+			if count == 1 {
+				_, err = fmt.Fprintf(sb, "%v;", value)
+			} else {
+				_, err = fmt.Fprintf(sb, "%v,%v;", value, count)
+			}
+			if err != nil {
+				panic("unreachable")
+			}
+		}
+
+		lastValue := h.buckets[0]
+		lastValueCount := 1
+
+		for i := 1; i < len(h.buckets); i++ {
+			if h.buckets[i] == lastValue {
+				lastValueCount++
+				continue
+			}
+
+			put(lastValue, lastValueCount)
+		}
+
+		put(lastValue, lastValueCount)
+	}
+
+	_, err = sb.WriteString("] }")
+	if err != nil {
+		panic("unreachable")
+	}
+
+	return sb.String()
+}
+
+func (h *histogram) clear() {
+	h.sum = 0
+	h.count = 0
+	for i := 0; i < len(h.buckets); i++ {
+		h.buckets[i] = 0
+	}
+}
