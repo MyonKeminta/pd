@@ -83,7 +83,6 @@ type tsoDispatcher struct {
 	lastTSOInfo  *tsoInfo
 
 	nextBatchedReqID uint64
-	windowSize       int
 	batchBufferPool  sync.Pool
 	pendingBatches   sync.Map
 
@@ -119,7 +118,6 @@ func newTSODispatcher(
 		reqChan:      make(chan *tsoRequest, maxBatchSize*2),
 		tsDeadlineCh: make(chan *deadline, 1),
 
-		windowSize: 4,
 		batchBufferPool: sync.Pool{New: func() any {
 			return newTSOBatchController(maxBatchSize)
 		}},
@@ -216,6 +214,12 @@ func (td *tsoDispatcher) handleDispatcher(wg *sync.WaitGroup) {
 		streamURL string
 		stream    *tsoStream
 	)
+
+	concurrencyFactor := option.getTSOClientConcurrencyFactor()
+	// Avoid loading from the dynamic options map too frequently.
+	lastUpdateConcurrencyFactorTime := time.Now()
+	const updateConcurrencyFactorInterval = time.Second * 5
+
 	// Loop through each batch of TSO requests and send them for processing.
 	streamLoopTimer := time.NewTimer(option.timeout)
 	defer streamLoopTimer.Stop()
@@ -253,6 +257,11 @@ tsoBatchLoop:
 		//}
 
 		currentBatchStartTime := time.Now()
+		if currentBatchStartTime.Sub(lastUpdateConcurrencyFactorTime) > updateConcurrencyFactorInterval {
+			lastUpdateConcurrencyFactorTime = currentBatchStartTime
+			concurrencyFactor = option.getTSOClientConcurrencyFactor()
+		}
+
 		batchController = td.batchBufferPool.Get().(*tsoBatchController)
 		batchController.collectedRequestCount = 0
 		// Receive the first request
@@ -328,7 +337,7 @@ tsoBatchLoop:
 		// Collected remaining requests for a batch
 		latency := stream.EstimatedRoundTripLatency()
 		estimateTSOLatencyGauge.WithLabelValues(td.dispatcherID, streamURL).Set(latency.Seconds())
-		totalBatchTime := latency / time.Duration(td.windowSize)
+		totalBatchTime := latency / time.Duration(concurrencyFactor)
 		remainingBatchTime := totalBatchTime - time.Since(currentBatchStartTime)
 		if remainingBatchTime > 0 {
 			if !batchingTimer.Stop() {

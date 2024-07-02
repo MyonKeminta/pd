@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	defaultPDTimeout                             = 3 * time.Second
-	maxInitClusterRetries                        = 100
-	defaultMaxTSOBatchWaitInterval time.Duration = 0
-	defaultEnableTSOFollowerProxy                = false
-	defaultEnableFollowerHandle                  = false
+	defaultPDTimeout                                = 3 * time.Second
+	maxInitClusterRetries                           = 100
+	defaultMaxTSOBatchWaitInterval    time.Duration = 0
+	defaultEnableTSOFollowerProxy                   = false
+	defaultEnableFollowerHandle                     = false
+	defaultTSOClientConcurrencyFactor               = 4
 )
 
 // DynamicOption is used to distinguish the dynamic option type.
@@ -43,6 +44,8 @@ const (
 	EnableTSOFollowerProxy
 	// EnableFollowerHandle is the follower handle option.
 	EnableFollowerHandle
+
+	TSOClientConcurrencyFactor
 
 	dynamicOptionCount
 )
@@ -76,6 +79,7 @@ func newOption() *option {
 	co.dynamicOptions[MaxTSOBatchWaitInterval].Store(defaultMaxTSOBatchWaitInterval)
 	co.dynamicOptions[EnableTSOFollowerProxy].Store(defaultEnableTSOFollowerProxy)
 	co.dynamicOptions[EnableFollowerHandle].Store(defaultEnableFollowerHandle)
+	co.dynamicOptions[TSOClientConcurrencyFactor].Store(defaultTSOClientConcurrencyFactor)
 	return co
 }
 
@@ -125,4 +129,15 @@ func (o *option) setEnableTSOFollowerProxy(enable bool) {
 // getEnableTSOFollowerProxy gets the TSO Follower Proxy option.
 func (o *option) getEnableTSOFollowerProxy() bool {
 	return o.dynamicOptions[EnableTSOFollowerProxy].Load().(bool)
+}
+
+func (o *option) setTSOClientConcurrencyFactor(value int) {
+	old := o.getTSOClientConcurrencyFactor()
+	if value != old {
+		o.dynamicOptions[TSOClientConcurrencyFactor].Store(value)
+	}
+}
+
+func (o *option) getTSOClientConcurrencyFactor() int {
+	return o.dynamicOptions[TSOClientConcurrencyFactor].Load().(int)
 }
