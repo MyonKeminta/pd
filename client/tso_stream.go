@@ -217,7 +217,7 @@ type batchedReq struct {
 	startTime    time.Time
 }
 
-type tsoStreamOnRecvCallback = func(reqID uint64, res tsoRequestResult, err error)
+type tsoStreamOnRecvCallback = func(reqID uint64, res tsoRequestResult, err error, statFunc func(latency time.Duration))
 
 var streamIDAlloc atomic.Int32
 
@@ -353,6 +353,8 @@ func (s *tsoStream) recvLoop(ctx context.Context) {
 		s.estimateLatencyMicros.Store(uint64(math.Exp(logEstimatedLatency)))
 	}
 
+	statFunc := s.observeLatency
+
 recvLoop:
 	for {
 		select {
@@ -397,9 +399,8 @@ recvLoop:
 
 		// TODO: Check request and result have matching count.
 
-		s.onRecvCallback(req.reqID, res, nil)
+		s.onRecvCallback(req.reqID, res, nil, statFunc)
 		s.onTheFlyRequestCountGauge.Set(float64(s.onTheFlyRequests.Add(-1)))
-		s.latencyHistogram.observe(latency.Seconds())
 		if now.Sub(s.lastDumpHistogramTime) >= time.Minute && !s.latencyHistogramDumpWorking.Load() {
 			s.latencyHistogramDumpWorking.Store(true)
 			s.latencyHistogram, s.latencyHistogramDumping = s.latencyHistogramDumping, s.latencyHistogram
@@ -420,14 +421,19 @@ recvLoop:
 		if !ok {
 			break
 		}
-		s.onRecvCallback(req.reqID, tsoRequestResult{}, finishWithErr)
+		s.onRecvCallback(req.reqID, tsoRequestResult{}, finishWithErr, nil)
 	}
+}
+
+func (s *tsoStream) observeLatency(latency time.Duration) {
+	s.latencyHistogram.observe(latency.Seconds())
 }
 
 func (s *tsoStream) dumpLatencyHistogram(now time.Time) {
 	defer s.latencyHistogramDumpWorking.Store(false)
 
 	s.latencyHistogramAccumulated.sum += s.latencyHistogramDumping.sum
+	s.latencyHistogramAccumulated.sumSquare += s.latencyHistogramDumping.sumSquare
 	s.latencyHistogramAccumulated.count += s.latencyHistogramDumping.count
 	for i := 0; i < len(s.latencyHistogramAccumulated.buckets) && i < len(s.latencyHistogramDumping.buckets); i++ {
 		s.latencyHistogramAccumulated.buckets[i] += s.latencyHistogramDumping.buckets[i]
@@ -733,6 +739,7 @@ func (h *histogram) String() string {
 
 func (h *histogram) clear() {
 	h.sum = 0
+	h.sumSquare = 0
 	h.count = 0
 	for i := 0; i < len(h.buckets); i++ {
 		h.buckets[i] = 0

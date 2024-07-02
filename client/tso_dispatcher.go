@@ -533,7 +533,7 @@ func (td *tsoDispatcher) processRequests(
 	return nil
 }
 
-func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error) {
+func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error, statFunc func(latency time.Duration)) {
 	tbc, loaded := td.pendingBatches.LoadAndDelete(reqID)
 	if !loaded {
 		log.Info("received response for already abandoned requests")
@@ -551,7 +551,7 @@ func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestRe
 	// `logical` is the largest ts's logical part here, we need to do the subtracting before we finish each TSO request.
 	firstLogical := tsoutil.AddLogical(result.logical, -int64(result.count)+1, result.suffixBits)
 	//td.compareAndSwapTS(curTSOInfo, firstLogical)
-	finishCollectedRequests(typedTbc.getCollectedRequests(), result.physical, firstLogical, result.suffixBits, err)
+	finishCollectedRequests(typedTbc.getCollectedRequests(), result.physical, firstLogical, result.suffixBits, err, statFunc)
 	typedTbc.collectedRequestCount = 0
 	td.batchBufferPool.Put(typedTbc)
 }

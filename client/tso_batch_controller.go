@@ -136,19 +136,22 @@ func (tbc *tsoBatchController) adjustBestBatchSize() {
 }
 
 func (tbc *tsoBatchController) finishCollectedRequests(physical, firstLogical int64, suffixBits uint32, err error) {
-	finishCollectedRequests(tbc.collectedRequests[:tbc.collectedRequestCount], physical, firstLogical, suffixBits, err)
+	finishCollectedRequests(tbc.collectedRequests[:tbc.collectedRequestCount], physical, firstLogical, suffixBits, err, nil)
 	// Prevent the finished requests from being processed again.
 	tbc.collectedRequestCount = 0
 
 }
 
-func finishCollectedRequests(requests []*tsoRequest, physical, firstLogical int64, suffixBits uint32, err error) {
+func finishCollectedRequests(requests []*tsoRequest, physical, firstLogical int64, suffixBits uint32, err error, statFunc func(latency time.Duration)) {
 	for i := 0; i < len(requests); i++ {
 		tsoReq := requests[i]
 		// Retrieve the request context before the request is done to trace without race.
 		requestCtx := tsoReq.requestCtx
 		tsoReq.physical, tsoReq.logical = physical, tsoutil.AddLogical(firstLogical, int64(i), suffixBits)
 		tsoReq.tryDone(err)
+		if statFunc != nil {
+			statFunc(time.Since(tsoReq.start))
+		}
 		trace.StartRegion(requestCtx, "pdclient.tsoReqDequeue").End()
 	}
 }
