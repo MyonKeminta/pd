@@ -724,6 +724,8 @@ func (h *histogram) String() string {
 			}
 
 			put(lastValue, lastValueCount)
+			lastValue = h.buckets[i]
+			lastValueCount = 1
 		}
 
 		put(lastValue, lastValueCount)
