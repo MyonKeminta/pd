@@ -279,10 +279,12 @@ func (s *tsoStream) getServerURL() string {
 func (s *tsoStream) processRequests(reqID uint64,
 	clusterID uint64, keyspaceID, keyspaceGroupID uint32, dcLocation string, count int64, batchStartTime time.Time,
 ) error {
-	s.pendingReqIDs.Push(batchedReq{
+	if !s.pendingReqIDs.Push(batchedReq{
 		reqID:     reqID,
 		startTime: time.Now(),
-	})
+	}) {
+		return errors.New("channel full")
+	}
 
 	if err := s.stream.Send(clusterID, keyspaceID, keyspaceGroupID, dcLocation, count); err != nil {
 		if err == io.EOF {
