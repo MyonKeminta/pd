@@ -218,6 +218,7 @@ func (td *tsoDispatcher) handleDispatcher(wg *sync.WaitGroup) {
 	)
 
 	concurrencyFactor := 0
+	batchNoWait := false
 	// Avoid loading from the dynamic options map too frequently.
 	lastUpdateConcurrencyFactorTime := time.Now()
 	const updateConcurrencyFactorInterval = time.Second * 5
@@ -262,6 +263,14 @@ tsoBatchLoop:
 		if concurrencyFactor == 0 || currentBatchStartTime.Sub(lastUpdateConcurrencyFactorTime) > updateConcurrencyFactorInterval {
 			lastUpdateConcurrencyFactorTime = currentBatchStartTime
 			newConcurrencyFactor := option.getTSOClientConcurrencyFactor()
+			newBatchNoWait := newConcurrencyFactor == 0
+			if newConcurrencyFactor == 0 {
+				newConcurrencyFactor = 1
+			}
+			if newConcurrencyFactor != concurrencyFactor || newBatchNoWait != batchNoWait {
+				log.Info("[tso] switching concurrency factor", zap.Int("old", concurrencyFactor), zap.Int("new", concurrencyFactor), zap.Bool("batchNoWait", batchNoWait))
+			}
+			batchNoWait = newBatchNoWait
 			// Adjust available tokens count
 			if newConcurrencyFactor > concurrencyFactor {
 				for concurrencyFactor < newConcurrencyFactor {
@@ -380,7 +389,7 @@ tsoBatchLoop:
 		estimateTSOLatencyGauge.WithLabelValues(td.dispatcherID, streamURL).Set(latency.Seconds())
 		totalBatchTime := latency / time.Duration(concurrencyFactor)
 		remainingBatchTime := totalBatchTime - time.Since(currentBatchStartTime)
-		if remainingBatchTime > 0 {
+		if remainingBatchTime > 0 && !batchNoWait {
 			if !batchingTimer.Stop() {
 				select {
 				case <-batchingTimer.C:
