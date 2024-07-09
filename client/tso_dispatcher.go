@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/trace"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -63,6 +65,8 @@ type tsoInfo struct {
 	logical             int64
 }
 
+var tsoDispatcherIDAlloc atomic.Int32
+
 type tsoServiceProvider interface {
 	getOption() *option
 	getServiceDiscovery() ServiceDiscovery
@@ -82,6 +86,11 @@ type tsoDispatcher struct {
 	lastTSOInfo     *tsoInfo
 
 	updateConnectionCtxsCh chan struct{}
+
+	tsoCallDurationHist      *AutoDumpHistogram
+	beforeHandleDurationHist *AutoDumpHistogram
+
+	statFunc func(time.Duration, time.Time)
 }
 
 func newTSODispatcher(
@@ -90,6 +99,7 @@ func newTSODispatcher(
 	maxBatchSize int,
 	provider tsoServiceProvider,
 ) *tsoDispatcher {
+	id := strconv.Itoa(int(tsoDispatcherIDAlloc.Add(1)))
 	dispatcherCtx, dispatcherCancel := context.WithCancel(ctx)
 	tsoBatchController := newTSOBatchController(
 		make(chan *tsoRequest, maxBatchSize*2),
@@ -102,15 +112,18 @@ func newTSODispatcher(
 		)
 	})
 	td := &tsoDispatcher{
-		ctx:                    dispatcherCtx,
-		cancel:                 dispatcherCancel,
-		dc:                     dc,
-		provider:               provider,
-		connectionCtxs:         &sync.Map{},
-		batchController:        tsoBatchController,
-		tsDeadlineCh:           make(chan *deadline, 1),
-		updateConnectionCtxsCh: make(chan struct{}, 1),
+		ctx:                      dispatcherCtx,
+		cancel:                   dispatcherCancel,
+		dc:                       dc,
+		provider:                 provider,
+		connectionCtxs:           &sync.Map{},
+		batchController:          tsoBatchController,
+		tsDeadlineCh:             make(chan *deadline, 1),
+		updateConnectionCtxsCh:   make(chan struct{}, 1),
+		tsoCallDurationHist:      NewAutoDumpingHistogram("tsoCallDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		beforeHandleDurationHist: NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 	}
+	td.statFunc = td.observeLatency
 	go td.watchTSDeadline()
 	return td
 }
@@ -203,7 +216,7 @@ tsoBatchLoop:
 		maxBatchWaitInterval := option.getMaxTSOBatchWaitInterval()
 		// Once the TSO requests are collected, must make sure they could be finished or revoked eventually,
 		// otherwise the upper caller may get blocked on waiting for the results.
-		if err = batchController.fetchPendingRequests(ctx, maxBatchWaitInterval); err != nil {
+		if err = batchController.fetchPendingRequests(ctx, maxBatchWaitInterval, td.beforeHandleDurationHist); err != nil {
 			// Finish the collected requests if the fetch failed.
 			batchController.finishCollectedRequests(0, 0, 0, errors.WithStack(err))
 			if err == context.Canceled {
@@ -392,6 +405,10 @@ func chooseStream(connectionCtxs *sync.Map) (connectionCtx *tsoConnectionContext
 	return connectionCtx
 }
 
+func (td *tsoDispatcher) observeLatency(latency time.Duration, now time.Time) {
+	td.tsoCallDurationHist.Observe(latency.Seconds(), now)
+}
+
 func (td *tsoDispatcher) processRequests(
 	stream *tsoStream, dcLocation string, tbc *tsoBatchController,
 ) error {
@@ -440,7 +457,7 @@ func (td *tsoDispatcher) processRequests(
 	// `logical` is the largest ts's logical part here, we need to do the subtracting before we finish each TSO request.
 	firstLogical := tsoutil.AddLogical(logical, -count+1, suffixBits)
 	td.compareAndSwapTS(curTSOInfo, firstLogical)
-	tbc.finishCollectedRequests(physical, firstLogical, suffixBits, nil)
+	tbc.finishCollectedRequestsWithStatFunc(physical, firstLogical, suffixBits, nil, td.statFunc)
 	return nil
 }
 

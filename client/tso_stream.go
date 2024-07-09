@@ -16,7 +16,9 @@ package pd
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/pingcap/errors"
@@ -62,7 +64,7 @@ func (b *pdTSOStreamBuilder) build(ctx context.Context, cancel context.CancelFun
 	stream, err := b.client.Tso(ctx)
 	done <- struct{}{}
 	if err == nil {
-		return &tsoStream{stream: pdTSOStreamAdapter{stream}, serverURL: b.serverURL}, nil
+		return newTSOStream(b.serverURL, pdTSOStreamAdapter{stream}), nil
 	}
 	return nil, err
 }
@@ -81,7 +83,7 @@ func (b *tsoTSOStreamBuilder) build(
 	stream, err := b.client.Tso(ctx)
 	done <- struct{}{}
 	if err == nil {
-		return &tsoStream{stream: tsoTSOStreamAdapter{stream}, serverURL: b.serverURL}, nil
+		return newTSOStream(b.serverURL, tsoTSOStreamAdapter{stream}), nil
 	}
 	return nil, err
 }
@@ -192,6 +194,22 @@ func (s tsoTSOStreamAdapter) Recv() (tsoRequestResult, error) {
 type tsoStream struct {
 	serverURL string
 	stream    grpcTSOStreamAdapter
+	streamID  string
+
+	rpcDurationHist *AutoDumpHistogram
+}
+
+var streamIDAlloc atomic.Int32
+
+func newTSOStream(serverURL string, stream grpcTSOStreamAdapter) *tsoStream {
+	streamID := fmt.Sprintf("%d", streamIDAlloc.Add(1))
+	s := &tsoStream{
+		serverURL:       serverURL,
+		stream:          stream,
+		streamID:        streamID,
+		rpcDurationHist: NewAutoDumpingHistogram("rpcDurationHist-"+streamID, 2e-5, 2000, 1, time.Minute),
+	}
+	return s
 }
 
 func (s *tsoStream) getServerURL() string {
@@ -220,7 +238,10 @@ func (s *tsoStream) processRequests(
 		}
 		return
 	}
-	requestDurationTSO.Observe(time.Since(start).Seconds())
+	now := time.Now()
+	rpcSeconds := now.Sub(start).Seconds()
+	requestDurationTSO.Observe(rpcSeconds)
+	s.rpcDurationHist.Observe(rpcSeconds, now)
 	tsoBatchSize.Observe(float64(count))
 
 	if res.count != uint32(count) {

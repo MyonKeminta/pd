@@ -16,6 +16,7 @@ package pd
 
 import (
 	"context"
+	"math"
 	"runtime/trace"
 	"time"
 
@@ -49,7 +50,7 @@ func newTSOBatchController(tsoRequestCh chan *tsoRequest, maxBatchSize int) *tso
 
 // fetchPendingRequests will start a new round of the batch collecting from the channel.
 // It returns true if everything goes well, otherwise false which means we should stop the service.
-func (tbc *tsoBatchController) fetchPendingRequests(ctx context.Context, maxBatchWaitInterval time.Duration) error {
+func (tbc *tsoBatchController) fetchPendingRequests(ctx context.Context, maxBatchWaitInterval time.Duration, beforeReceiveDurationHist *AutoDumpHistogram) error {
 	var firstRequest *tsoRequest
 	select {
 	case <-ctx.Done():
@@ -59,14 +60,14 @@ func (tbc *tsoBatchController) fetchPendingRequests(ctx context.Context, maxBatc
 	// Start to batch when the first TSO request arrives.
 	tbc.batchStartTime = time.Now()
 	tbc.collectedRequestCount = 0
-	tbc.pushRequest(firstRequest)
+	tbc.pushRequest(firstRequest, beforeReceiveDurationHist, tbc.batchStartTime)
 
 	// This loop is for trying best to collect more requests, so we use `tbc.maxBatchSize` here.
 fetchPendingRequestsLoop:
 	for tbc.collectedRequestCount < tbc.maxBatchSize {
 		select {
 		case tsoReq := <-tbc.tsoRequestCh:
-			tbc.pushRequest(tsoReq)
+			tbc.pushRequest(tsoReq, beforeReceiveDurationHist, tbc.batchStartTime)
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
@@ -89,7 +90,7 @@ fetchPendingRequestsLoop:
 		for tbc.collectedRequestCount < tbc.bestBatchSize {
 			select {
 			case tsoReq := <-tbc.tsoRequestCh:
-				tbc.pushRequest(tsoReq)
+				tbc.pushRequest(tsoReq, beforeReceiveDurationHist, time.Now())
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-after.C:
@@ -104,7 +105,7 @@ fetchPendingRequestsLoop:
 	for tbc.collectedRequestCount < tbc.maxBatchSize {
 		select {
 		case tsoReq := <-tbc.tsoRequestCh:
-			tbc.pushRequest(tsoReq)
+			tbc.pushRequest(tsoReq, beforeReceiveDurationHist, time.Now())
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
@@ -114,9 +115,10 @@ fetchPendingRequestsLoop:
 	return nil
 }
 
-func (tbc *tsoBatchController) pushRequest(tsoReq *tsoRequest) {
+func (tbc *tsoBatchController) pushRequest(tsoReq *tsoRequest, beforeReceiveDurationHist *AutoDumpHistogram, now time.Time) {
 	tbc.collectedRequests[tbc.collectedRequestCount] = tsoReq
 	tbc.collectedRequestCount++
+	beforeReceiveDurationHist.Observe(math.Max(now.Sub(tsoReq.start).Seconds(), 0), now)
 }
 
 func (tbc *tsoBatchController) getCollectedRequests() []*tsoRequest {
@@ -135,13 +137,20 @@ func (tbc *tsoBatchController) adjustBestBatchSize() {
 		tbc.bestBatchSize++
 	}
 }
-
 func (tbc *tsoBatchController) finishCollectedRequests(physical, firstLogical int64, suffixBits uint32, err error) {
+	tbc.finishCollectedRequestsWithStatFunc(physical, firstLogical, suffixBits, err, nil)
+}
+
+func (tbc *tsoBatchController) finishCollectedRequestsWithStatFunc(physical, firstLogical int64, suffixBits uint32, err error, statFunc func(latency time.Duration, now time.Time)) {
+	now := time.Now()
 	for i := 0; i < tbc.collectedRequestCount; i++ {
 		tsoReq := tbc.collectedRequests[i]
 		// Retrieve the request context before the request is done to trace without race.
 		requestCtx := tsoReq.requestCtx
 		tsoReq.physical, tsoReq.logical = physical, tsoutil.AddLogical(firstLogical, int64(i), suffixBits)
+		if statFunc != nil {
+			statFunc(now.Sub(tsoReq.start), now)
+		}
 		tsoReq.tryDone(err)
 		trace.StartRegion(requestCtx, "pdclient.tsoReqDequeue").End()
 	}
