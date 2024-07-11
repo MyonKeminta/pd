@@ -217,7 +217,7 @@ type batchedReq struct {
 	startTime    time.Time
 }
 
-type tsoStreamOnRecvCallback = func(reqID uint64, res tsoRequestResult, err error, statFunc func(latency time.Duration))
+type tsoStreamOnRecvCallback = func(reqID uint64, res tsoRequestResult, err error, statFunc func(latency time.Duration, now time.Time))
 
 var streamIDAlloc atomic.Int32
 
@@ -239,11 +239,8 @@ type tsoStream struct {
 	onTheFlyRequestCountGauge prometheus.Gauge
 	onTheFlyRequests          atomic.Int32
 
-	latencyHistogram            *histogram
-	latencyHistogramDumping     *histogram
-	latencyHistogramAccumulated *histogram
-	latencyHistogramDumpWorking atomic.Bool
-	lastDumpHistogramTime       time.Time
+	tsoCallDurationHist *AutoDumpHistogram
+	rpcDurationHist     *AutoDumpHistogram
 }
 
 func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback tsoStreamOnRecvCallback) *tsoStream {
@@ -262,10 +259,8 @@ func newTSOStream(serverURL string, stream grpcTSOStreamAdapter, onRecvCallback 
 
 		onTheFlyRequestCountGauge: onTheFlyRequestCountGauge.WithLabelValues(streamID),
 
-		latencyHistogram:            newHistogram(2e-5, 2000, 1),
-		latencyHistogramDumping:     newHistogram(2e-5, 2000, 1),
-		latencyHistogramAccumulated: newHistogram(2e-5, 2000, 1),
-		lastDumpHistogramTime:       time.Now(),
+		tsoCallDurationHist: NewAutoDumpingHistogram("tsoCallDurationHist-"+streamID, 2e-5, 2000, 1, time.Minute),
+		rpcDurationHist:     NewAutoDumpingHistogram("rpcDurationHist-"+streamID, 2e-5, 2000, 1, time.Minute),
 	}
 	s.wg.Add(1)
 	go s.recvLoop(ctx)
@@ -393,8 +388,9 @@ recvLoop:
 		//}
 
 		latency := now.Sub(req.startTime)
-
-		requestDurationTSO.Observe(latency.Seconds())
+		latencySeconds := latency.Seconds()
+		requestDurationTSO.Observe(latencySeconds)
+		s.rpcDurationHist.Observe(latencySeconds, now)
 		tsoBatchSize.Observe(float64(res.count))
 
 		updateEstimateLatency(now, latency)
@@ -403,12 +399,6 @@ recvLoop:
 
 		s.onRecvCallback(req.reqID, res, nil, statFunc)
 		s.onTheFlyRequestCountGauge.Set(float64(s.onTheFlyRequests.Add(-1)))
-		if now.Sub(s.lastDumpHistogramTime) >= time.Minute && !s.latencyHistogramDumpWorking.Load() {
-			s.latencyHistogramDumpWorking.Store(true)
-			s.latencyHistogram, s.latencyHistogramDumping = s.latencyHistogramDumping, s.latencyHistogram
-			s.lastDumpHistogramTime = now
-			go s.dumpLatencyHistogram(now)
-		}
 	}
 
 	if finishWithErr == nil {
@@ -427,26 +417,8 @@ recvLoop:
 	}
 }
 
-func (s *tsoStream) observeLatency(latency time.Duration) {
-	s.latencyHistogram.observe(latency.Seconds())
-}
-
-func (s *tsoStream) dumpLatencyHistogram(now time.Time) {
-	defer s.latencyHistogramDumpWorking.Store(false)
-
-	s.latencyHistogramAccumulated.sum += s.latencyHistogramDumping.sum
-	s.latencyHistogramAccumulated.sumSquare += s.latencyHistogramDumping.sumSquare
-	s.latencyHistogramAccumulated.count += s.latencyHistogramDumping.count
-	for i := 0; i < len(s.latencyHistogramAccumulated.buckets) && i < len(s.latencyHistogramDumping.buckets); i++ {
-		s.latencyHistogramAccumulated.buckets[i] += s.latencyHistogramDumping.buckets[i]
-	}
-	if len(s.latencyHistogramDumping.buckets) > len(s.latencyHistogramAccumulated.buckets) {
-		s.latencyHistogramAccumulated.buckets = append(s.latencyHistogramAccumulated.buckets, s.latencyHistogramDumping.buckets[len(s.latencyHistogramAccumulated.buckets):]...)
-	}
-
-	log.Info("tso.Stream dumping accumulated latency histogram", zap.String("streamID", s.streamID), zap.Time("time", now), zap.Stringer("histogram", s.latencyHistogramAccumulated))
-
-	s.latencyHistogramDumping.clear()
+func (s *tsoStream) observeLatency(latency time.Duration, now time.Time) {
+	s.tsoCallDurationHist.Observe(latency.Seconds(), now)
 }
 
 func (s *tsoStream) EstimatedRoundTripLatency() time.Duration {

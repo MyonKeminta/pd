@@ -89,6 +89,8 @@ type tsoDispatcher struct {
 	updateConnectionCtxsCh chan struct{}
 
 	dispatcherID string
+
+	beforeHandleDurationHist *AutoDumpHistogram
 }
 
 func newTSODispatcher(
@@ -108,6 +110,7 @@ func newTSODispatcher(
 	//		maxBatchSize,
 	//	)
 	//})
+	id := fmt.Sprintf("%d", dispatcherIDAlloc.Add(1))
 	td := &tsoDispatcher{
 		ctx:            dispatcherCtx,
 		cancel:         dispatcherCancel,
@@ -124,7 +127,9 @@ func newTSODispatcher(
 
 		updateConnectionCtxsCh: make(chan struct{}, 1),
 
-		dispatcherID: fmt.Sprintf("%d", dispatcherIDAlloc.Add(1)),
+		dispatcherID: id,
+
+		beforeHandleDurationHist: NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 	}
 	go td.watchTSDeadline()
 	return td
@@ -272,7 +277,7 @@ tsoBatchLoop:
 			return
 		case firstRequest := <-td.reqChan:
 			batchController.batchStartTime = time.Now()
-			batchController.pushRequest(firstRequest)
+			batchController.pushRequest(firstRequest, td.beforeHandleDurationHist, currentBatchStartTime)
 		}
 
 		//if maxBatchWaitInterval >= 0 {
@@ -355,13 +360,14 @@ tsoBatchLoop:
 						zap.String("dc-location", dc))
 					return
 				case req := <-td.reqChan:
-					batchController.pushRequest(req)
+					batchController.pushRequest(req, td.beforeHandleDurationHist, time.Now())
 				case <-batchingTimer.C:
 					break batchingLoop
 				}
 			}
 		}
 
+		now := time.Now()
 		// Continue collecting as many as possible without blocking
 	nonWaitingBatchLoop:
 		for {
@@ -371,7 +377,7 @@ tsoBatchLoop:
 					zap.String("dc-location", dc))
 				return
 			case req := <-td.reqChan:
-				batchController.pushRequest(req)
+				batchController.pushRequest(req, td.beforeHandleDurationHist, now)
 			default:
 				break nonWaitingBatchLoop
 			}
@@ -542,7 +548,7 @@ func (td *tsoDispatcher) processRequests(
 	return nil
 }
 
-func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error, statFunc func(latency time.Duration)) {
+func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error, statFunc func(latency time.Duration, now time.Time)) {
 	tbc, loaded := td.pendingBatches.LoadAndDelete(reqID)
 	if !loaded {
 		log.Info("received response for already abandoned requests")
