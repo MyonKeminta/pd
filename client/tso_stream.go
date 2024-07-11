@@ -328,24 +328,24 @@ func (s *tsoStream) recvLoop(ctx context.Context) {
 	var finishWithErr error
 
 	const (
-		initialEstimateTSOLatencyMicros float64 = 2000
+		initialEstimateTSOLatencyMicros float64 = 200
 	)
 	filterRC := 1.0 / (2.0 * math.Pi * FilterCutoffFreq)
 
-	// A fake very-faraway value
-	lastReceiveTime := time.Now().Add(-time.Hour * 10)
+	// A fake very-faraway initial value
+	lastSampleTime := time.Now().Add(-time.Hour * 10)
 	logEstimatedLatency := math.Log(initialEstimateTSOLatencyMicros)
 
-	updateEstimateLatency := func(now time.Time, latency time.Duration) {
+	updateEstimateLatency := func(sampleTime time.Time, latency time.Duration) {
 		if latency < 0 {
 			// Unreachable
 			return
 		}
 		// Delta time
-		dt := now.Sub(lastReceiveTime).Seconds()
+		dt := sampleTime.Sub(lastSampleTime).Seconds()
 		// Current sample represented and calculated in log(microseconds)
 		currentSample := math.Log(float64(latency.Microseconds()))
-		alpha := dt / (filterRC + dt)
+		alpha := math.Min(dt/(filterRC+dt), 0.2)
 		logEstimatedLatency = (1-alpha)*logEstimatedLatency + alpha*currentSample
 		s.estimateLatencyMicros.Store(uint64(math.Exp(logEstimatedLatency)))
 	}
@@ -393,7 +393,7 @@ recvLoop:
 		s.rpcDurationHist.Observe(latencySeconds, now)
 		tsoBatchSize.Observe(float64(res.count))
 
-		updateEstimateLatency(now, latency)
+		updateEstimateLatency(req.startTime, latency)
 
 		// TODO: Check request and result have matching count.
 
