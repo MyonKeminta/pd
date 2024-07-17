@@ -90,7 +90,9 @@ type tsoDispatcher struct {
 
 	dispatcherID string
 
-	beforeHandleDurationHist *AutoDumpHistogram
+	beforeHandleDurationHist   *AutoDumpHistogram
+	batchWaitTimerDuration     *AutoDumpHistogram
+	batchNoWaitCollectDuration *AutoDumpHistogram
 }
 
 func newTSODispatcher(
@@ -129,7 +131,9 @@ func newTSODispatcher(
 
 		dispatcherID: id,
 
-		beforeHandleDurationHist: NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		beforeHandleDurationHist:   NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		batchWaitTimerDuration:     NewAutoDumpingHistogram("batchWaitTimerDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		batchNoWaitCollectDuration: NewAutoDumpingHistogram("batchNoWaitCollectDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 	}
 	go td.watchTSDeadline()
 	return td
@@ -343,7 +347,8 @@ tsoBatchLoop:
 		latency := stream.EstimatedRoundTripLatency()
 		estimateTSOLatencyGauge.WithLabelValues(td.dispatcherID, streamURL).Set(latency.Seconds())
 		totalBatchTime := latency / time.Duration(concurrencyFactor)
-		remainingBatchTime := totalBatchTime - time.Since(currentBatchStartTime)
+		waitTimerStart := time.Now()
+		remainingBatchTime := totalBatchTime - waitTimerStart.Sub(currentBatchStartTime)
 		if remainingBatchTime > 0 {
 			if !batchingTimer.Stop() {
 				select {
@@ -366,8 +371,10 @@ tsoBatchLoop:
 				}
 			}
 		}
+		waitTimerEnd := time.Now()
+		td.batchWaitTimerDuration.Observe(waitTimerEnd.Sub(waitTimerStart).Seconds(), waitTimerEnd)
 
-		now := time.Now()
+		nowaitCollectStart := time.Now()
 		// Continue collecting as many as possible without blocking
 	nonWaitingBatchLoop:
 		for {
@@ -377,11 +384,13 @@ tsoBatchLoop:
 					zap.String("dc-location", dc))
 				return
 			case req := <-td.reqChan:
-				batchController.pushRequest(req, td.beforeHandleDurationHist, now)
+				batchController.pushRequest(req, td.beforeHandleDurationHist, nowaitCollectStart)
 			default:
 				break nonWaitingBatchLoop
 			}
 		}
+		nowaitCollectEnd := time.Now()
+		td.batchWaitTimerDuration.Observe(nowaitCollectEnd.Sub(nowaitCollectStart).Seconds(), nowaitCollectEnd)
 
 		//done := make(chan struct{})
 		//dl := newTSDeadline(option.timeout, done, cancel)
