@@ -281,7 +281,7 @@ tsoBatchLoop:
 			return
 		case firstRequest := <-td.reqChan:
 			batchController.batchStartTime = time.Now()
-			batchController.pushRequest(firstRequest, td.beforeHandleDurationHist, currentBatchStartTime)
+			batchController.pushRequest(firstRequest, td.beforeHandleDurationHist, batchController.batchStartTime)
 		}
 
 		//if maxBatchWaitInterval >= 0 {
