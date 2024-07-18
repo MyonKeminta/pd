@@ -94,6 +94,7 @@ type tsoDispatcher struct {
 	beforeHandleDurationHist   *AutoDumpHistogram
 	batchWaitTimerDuration     *AutoDumpHistogram
 	batchNoWaitCollectDuration *AutoDumpHistogram
+	waitTokenDuration          *AutoDumpHistogram
 }
 
 func newTSODispatcher(
@@ -136,6 +137,7 @@ func newTSODispatcher(
 		beforeHandleDurationHist:   NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 		batchWaitTimerDuration:     NewAutoDumpingHistogram("batchWaitTimerDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 		batchNoWaitCollectDuration: NewAutoDumpingHistogram("batchNoWaitCollectDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		waitTokenDuration:          NewAutoDumpingHistogram("waitTokenDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 	}
 	go td.watchTSDeadline()
 	return td
@@ -315,6 +317,8 @@ tsoBatchLoop:
 				// Token is not ready. Continue the loop to wait for the token or another request.
 				continue
 			case <-td.tsoReqTokenCh:
+				now := time.Now()
+				td.waitTokenDuration.Observe(now.Sub(currentBatchStartTime).Seconds(), now)
 			}
 
 			// A token is ready. If the first request didn't arrive, wait for it.
