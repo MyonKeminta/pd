@@ -90,6 +90,10 @@ type tsoDispatcher struct {
 	tsoReqTokenCh          chan struct{}
 
 	dispatcherID string
+
+	beforeHandleDurationHist   *AutoDumpHistogram
+	batchWaitTimerDuration     *AutoDumpHistogram
+	batchNoWaitCollectDuration *AutoDumpHistogram
 }
 
 func newTSODispatcher(
@@ -109,6 +113,7 @@ func newTSODispatcher(
 	//		maxBatchSize,
 	//	)
 	//})
+	id := fmt.Sprintf("%d", dispatcherIDAlloc.Add(1))
 	td := &tsoDispatcher{
 		ctx:            dispatcherCtx,
 		cancel:         dispatcherCancel,
@@ -126,7 +131,11 @@ func newTSODispatcher(
 		updateConnectionCtxsCh: make(chan struct{}, 1),
 		tsoReqTokenCh:          make(chan struct{}, 256),
 
-		dispatcherID: fmt.Sprintf("%d", dispatcherIDAlloc.Add(1)),
+		dispatcherID: id,
+
+		beforeHandleDurationHist:   NewAutoDumpingHistogram("beforeHandleDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		batchWaitTimerDuration:     NewAutoDumpingHistogram("batchWaitTimerDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
+		batchNoWaitCollectDuration: NewAutoDumpingHistogram("batchNoWaitCollectDurationHist-"+id, 2e-5, 2000, 1, time.Minute),
 	}
 	go td.watchTSDeadline()
 	return td
@@ -302,7 +311,7 @@ tsoBatchLoop:
 				return
 			case firstRequest := <-td.reqChan:
 				batchController.batchStartTime = time.Now()
-				batchController.pushRequest(firstRequest)
+				batchController.pushRequest(firstRequest, td.beforeHandleDurationHist, batchController.batchStartTime)
 				// Token is not ready. Continue the loop to wait for the token or another request.
 				continue
 			case <-td.tsoReqTokenCh:
@@ -317,7 +326,7 @@ tsoBatchLoop:
 					return
 				case firstRequest := <-td.reqChan:
 					batchController.batchStartTime = time.Now()
-					batchController.pushRequest(firstRequest)
+					batchController.pushRequest(firstRequest, td.beforeHandleDurationHist, batchController.batchStartTime)
 					// Token is not ready. Continue the loop to wait for the token or another request.
 				}
 			}
@@ -388,7 +397,8 @@ tsoBatchLoop:
 		latency := stream.EstimatedRoundTripLatency()
 		estimateTSOLatencyGauge.WithLabelValues(td.dispatcherID, streamURL).Set(latency.Seconds())
 		totalBatchTime := latency / time.Duration(concurrencyFactor)
-		remainingBatchTime := totalBatchTime - time.Since(currentBatchStartTime)
+		waitTimerStart := time.Now()
+		remainingBatchTime := totalBatchTime - waitTimerStart.Sub(currentBatchStartTime)
 		if remainingBatchTime > 0 && !batchNoWait {
 			if !batchingTimer.Stop() {
 				select {
@@ -405,13 +415,16 @@ tsoBatchLoop:
 						zap.String("dc-location", dc))
 					return
 				case req := <-td.reqChan:
-					batchController.pushRequest(req)
+					batchController.pushRequest(req, td.beforeHandleDurationHist, time.Now())
 				case <-batchingTimer.C:
 					break batchingLoop
 				}
 			}
 		}
+		waitTimerEnd := time.Now()
+		td.batchWaitTimerDuration.Observe(waitTimerEnd.Sub(waitTimerStart).Seconds(), waitTimerEnd)
 
+		nowaitCollectStart := time.Now()
 		// Continue collecting as many as possible without blocking
 	nonWaitingBatchLoop:
 		for {
@@ -421,11 +434,13 @@ tsoBatchLoop:
 					zap.String("dc-location", dc))
 				return
 			case req := <-td.reqChan:
-				batchController.pushRequest(req)
+				batchController.pushRequest(req, td.beforeHandleDurationHist, nowaitCollectStart)
 			default:
 				break nonWaitingBatchLoop
 			}
 		}
+		nowaitCollectEnd := time.Now()
+		td.batchWaitTimerDuration.Observe(nowaitCollectEnd.Sub(nowaitCollectStart).Seconds(), nowaitCollectEnd)
 
 		//done := make(chan struct{})
 		//dl := newTSDeadline(option.timeout, done, cancel)
@@ -598,7 +613,7 @@ func (td *tsoDispatcher) cancelCollectedRequests(tbc *tsoBatchController, err er
 	td.tsoReqTokenCh <- struct{}{}
 }
 
-func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error, statFunc func(latency time.Duration)) {
+func (td *tsoDispatcher) onBatchedRespReceived(reqID uint64, result tsoRequestResult, err error, statFunc func(latency time.Duration, now time.Time)) {
 	tbc, loaded := td.pendingBatches.LoadAndDelete(reqID)
 	if !loaded {
 		log.Info("received response for already abandoned requests")

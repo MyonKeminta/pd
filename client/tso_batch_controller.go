@@ -15,6 +15,7 @@
 package pd
 
 import (
+	"math"
 	"runtime/trace"
 	"time"
 
@@ -113,9 +114,10 @@ func newTSOBatchController(maxBatchSize int) *tsoBatchController {
 //	return nil
 //}
 
-func (tbc *tsoBatchController) pushRequest(tsoReq *tsoRequest) {
+func (tbc *tsoBatchController) pushRequest(tsoReq *tsoRequest, beforeReceiveDurationHist *AutoDumpHistogram, now time.Time) {
 	tbc.collectedRequests[tbc.collectedRequestCount] = tsoReq
 	tbc.collectedRequestCount++
+	beforeReceiveDurationHist.Observe(math.Max(now.Sub(tsoReq.start).Seconds(), 0), now)
 }
 
 func (tbc *tsoBatchController) getCollectedRequests() []*tsoRequest {
@@ -142,16 +144,17 @@ func (tbc *tsoBatchController) finishCollectedRequests(physical, firstLogical in
 
 }
 
-func finishCollectedRequests(requests []*tsoRequest, physical, firstLogical int64, suffixBits uint32, err error, statFunc func(latency time.Duration)) {
+func finishCollectedRequests(requests []*tsoRequest, physical, firstLogical int64, suffixBits uint32, err error, statFunc func(latency time.Duration, now time.Time)) {
+	now := time.Now()
 	for i := 0; i < len(requests); i++ {
 		tsoReq := requests[i]
 		// Retrieve the request context before the request is done to trace without race.
 		requestCtx := tsoReq.requestCtx
 		tsoReq.physical, tsoReq.logical = physical, tsoutil.AddLogical(firstLogical, int64(i), suffixBits)
-		tsoReq.tryDone(err)
 		if statFunc != nil {
-			statFunc(time.Since(tsoReq.start))
+			statFunc(now.Sub(tsoReq.start), now)
 		}
+		tsoReq.tryDone(err)
 		trace.StartRegion(requestCtx, "pdclient.tsoReqDequeue").End()
 	}
 }
