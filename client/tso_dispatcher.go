@@ -390,7 +390,7 @@ tsoBatchLoop:
 			}
 		}
 		nowaitCollectEnd := time.Now()
-		td.batchWaitTimerDuration.Observe(nowaitCollectEnd.Sub(nowaitCollectStart).Seconds(), nowaitCollectEnd)
+		td.batchNoWaitCollectDuration.Observe(nowaitCollectEnd.Sub(nowaitCollectStart).Seconds(), nowaitCollectEnd)
 
 		//done := make(chan struct{})
 		//dl := newTSDeadline(option.timeout, done, cancel)
